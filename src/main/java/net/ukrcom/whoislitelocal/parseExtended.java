@@ -15,6 +15,10 @@
  */
 package net.ukrcom.whoislitelocal;
 
+import inet.ipaddr.AddressStringException;
+import inet.ipaddr.IPAddress;
+import inet.ipaddr.IPAddressString;
+import inet.ipaddr.IncompatibleAddressException;
 import java.net.UnknownHostException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -37,19 +41,19 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             if (needInitializeTempTables) {
                 // Initialize temporary tables once per process
                 pf.connection.createStatement().execute("""
-            CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv4 (
-                coordinator TEXT NOT NULL,
-                identifier TEXT NOT NULL,
-                network TEXT NOT NULL,
-                UNIQUE(coordinator, identifier, network)
-            )""");
+                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv4 (
+                        coordinator TEXT NOT NULL,
+                        identifier TEXT NOT NULL,
+                        network TEXT NOT NULL,
+                        UNIQUE(coordinator, identifier, network)
+                    )""");
                 pf.connection.createStatement().execute("""
-            CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv6 (
-                coordinator TEXT NOT NULL,
-                identifier TEXT NOT NULL,
-                network TEXT NOT NULL,
-                UNIQUE(coordinator, identifier, network)
-            )""");
+                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv6 (
+                        coordinator TEXT NOT NULL,
+                        identifier TEXT NOT NULL,
+                        network TEXT NOT NULL,
+                        UNIQUE(coordinator, identifier, network)
+                    )""");
                 needInitializeTempTables = false;
             } else {
                 // Clear temporary tables for this file
@@ -141,6 +145,20 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
 
     private void processIpv4(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws UnknownHostException, SQLException {
         String ipv4Network = IpUtils.ipv4ToCidr(value, Integer.parseInt(countOrPrefix));
+
+        String firstip = null;
+        try {
+            IPAddress ipv4Address = new IPAddressString(ipv4Network).toAddress();
+            if (ipv4Address.getCount().longValue() <= 2) {
+                firstip = ipv4Address.getLower().toString();
+            } else {
+                firstip = ipv4Address.getLower().increment(1).toString();
+            }
+            firstip = firstip.replaceFirst("/\\d+$", "/32");
+        } catch (AddressStringException | IncompatibleAddressException e) {
+            pf.logger.error("Invalid network {} : {}", ipv4Network, e);
+        }
+
         try (PreparedStatement tempStmt = pf.connection.prepareStatement(
                 "INSERT OR IGNORE INTO temp_ipv4 (coordinator, identifier, network) VALUES (?, ?, ?)")) {
             tempStmt.setString(1, coordinator);
@@ -150,12 +168,13 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             tempStmt.executeBatch();
         }
         try (PreparedStatement mainStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO ipv4 (coordinator, country, network, date, identifier) VALUES (?, ?, ?, ?, ?)")) {
+                "INSERT OR IGNORE INTO ipv4 (coordinator, country, network, date, identifier, firstip) VALUES (?, ?, ?, ?, ?, ?)")) {
             mainStmt.setString(1, coordinator);
             mainStmt.setString(2, country);
             mainStmt.setString(3, ipv4Network);
             mainStmt.setString(4, date);
             mainStmt.setString(5, identifier);
+            mainStmt.setString(6, firstip);
             mainStmt.addBatch();
             mainStmt.executeBatch();
         }
@@ -163,6 +182,20 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
 
     private void processIpv6(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws UnknownHostException, SQLException {
         String ipv6Network = IpUtils.ipv6ToCidr(value, Integer.parseInt(countOrPrefix));
+
+        String firstip = null;
+        try {
+            IPAddress ipv6Address = new IPAddressString(ipv6Network).toAddress();
+            if (ipv6Address.getCount().longValue() <= 2) {
+                firstip = ipv6Address.getLower().toString();
+            } else {
+                firstip = ipv6Address.getLower().increment(1).toString();
+            }
+            firstip = firstip.replaceFirst("/\\d+$", "/128");
+        } catch (AddressStringException | IncompatibleAddressException e) {
+            pf.logger.error("Invalid network {} : {}", ipv6Network, e);
+        }
+
         try (PreparedStatement tempStmt = pf.connection.prepareStatement(
                 "INSERT OR IGNORE INTO temp_ipv6 (coordinator, identifier, network) VALUES (?, ?, ?)")) {
             tempStmt.setString(1, coordinator);
@@ -172,12 +205,13 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             tempStmt.executeBatch();
         }
         try (PreparedStatement mainStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO ipv6 (coordinator, country, network, date, identifier) VALUES (?, ?, ?, ?, ?)")) {
+                "INSERT OR IGNORE INTO ipv6 (coordinator, country, network, date, identifier, firstip) VALUES (?, ?, ?, ?, ?, ?)")) {
             mainStmt.setString(1, coordinator);
             mainStmt.setString(2, country);
             mainStmt.setString(3, ipv6Network);
             mainStmt.setString(4, date);
             mainStmt.setString(5, identifier);
+            mainStmt.setString(6, firstip);
             mainStmt.addBatch();
             mainStmt.executeBatch();
         }

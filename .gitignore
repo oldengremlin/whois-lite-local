@@ -2,6 +2,9 @@
 *.txt
 *.gz
 *.sh
+*.db
+logs/*.gz
+whoislitelocal.db
 
 # Compiled class file
 *.class

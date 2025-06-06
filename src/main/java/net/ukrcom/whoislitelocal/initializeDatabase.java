@@ -48,6 +48,7 @@ public class initializeDatabase {
                         date TEXT NOT NULL,
                         identifier TEXT NOT NULL,
                         name TEXT,
+                        geo TEXT,
                         UNIQUE(coordinator, asn, identifier)
                     )""");
                 stmt.execute("""
@@ -56,6 +57,7 @@ public class initializeDatabase {
                         coordinator TEXT NOT NULL,
                         country TEXT NOT NULL,
                         network TEXT NOT NULL,
+                        firstip TEXT,
                         date TEXT NOT NULL,
                         identifier TEXT NOT NULL,
                         UNIQUE(coordinator, network, identifier)
@@ -66,6 +68,7 @@ public class initializeDatabase {
                         coordinator TEXT NOT NULL,
                         country TEXT NOT NULL,
                         network TEXT NOT NULL,
+                        firstip TEXT,
                         date TEXT NOT NULL,
                         identifier TEXT NOT NULL,
                         UNIQUE(coordinator, network, identifier)
@@ -97,6 +100,15 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_ipv4_coordinator_identifier already exists, skipping creation");
                     }
+                    // Index idx_ipv4_firstip
+                    checkStmt.setString(1, "idx_ipv4_firstip");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_ipv4_firstip' ON 'ipv4' ('firstip')");
+                        logger.info("Created index idx_ipv4_firstip on ipv4 table");
+                    } else {
+                        logger.info("Index idx_ipv4_firstip already exists, skipping creation");
+                    }
                     // Index idx_ipv6_coordinator_identifier
                     checkStmt.setString(1, "idx_ipv6_coordinator_identifier");
                     rs = checkStmt.executeQuery();
@@ -106,6 +118,16 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_ipv6_coordinator_identifier already exists, skipping creation");
                     }
+                    // Index idx_ipv6_firstip
+                    checkStmt.setString(1, "idx_ipv6_firstip");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_ipv6_firstip' ON 'ipv6' ('firstip')");
+                        logger.info("Created index idx_ipv6_firstip on ipv4 table");
+                    } else {
+                        logger.info("Index idx_ipv6_firstip already exists, skipping creation");
+                    }
+
                 }
                 connSQLite.commit();
                 logger.info("Database initialized");
