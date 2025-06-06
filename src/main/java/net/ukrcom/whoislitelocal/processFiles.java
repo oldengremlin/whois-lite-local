@@ -87,7 +87,6 @@ public class processFiles {
             }
             this.lastModified = rs.getString("last_modified");
             this.fileSize = rs.getLong("file_size");
-
             URI uri = new URI(this.processUrl);
             HttpURLConnection connHttp = (HttpURLConnection) uri.toURL().openConnection();
             try {
@@ -111,7 +110,6 @@ public class processFiles {
         connHttp.setReadTimeout(Config.getReadTimeout());
         this.lastModified = connHttp.getHeaderField("Last-Modified") != null ? connHttp.getHeaderField("Last-Modified") : "";
         this.fileSize = connHttp.getContentLengthLong();
-
         // Create temporary file
         this.tempFile = Files.createTempFile("whoislite_", ".txt");
         try (InputStream inputStream = connHttp.getInputStream()) {
@@ -121,5 +119,4 @@ public class processFiles {
             connHttp.disconnect();
         }
     }
-
 }

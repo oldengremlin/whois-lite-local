@@ -18,6 +18,8 @@ package net.ukrcom.whoislitelocal;
 import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 
 /**
@@ -75,11 +77,36 @@ public class initializeDatabase {
                         last_modified TEXT NOT NULL,
                         file_size INTEGER NOT NULL
                     )""");
-                stmt.execute("""
-                             CREATE INDEX 'idx_asn_asn' ON 'asn' (
-                             	'asn'
-                             )
-                             """);
+                try (PreparedStatement checkStmt = connSQLite.prepareStatement(
+                        "SELECT name FROM sqlite_master WHERE type='index' AND name=?")) {
+                    // Index idx_asn_asn
+                    checkStmt.setString(1, "idx_asn_asn");
+                    ResultSet rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_asn_asn' ON 'asn' ('asn')");
+                        logger.info("Created index idx_asn_asn on asn table");
+                    } else {
+                        logger.info("Index idx_asn_asn already exists, skipping creation");
+                    }
+                    // Index idx_ipv4_coordinator_identifier
+                    checkStmt.setString(1, "idx_ipv4_coordinator_identifier");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_ipv4_coordinator_identifier' ON 'ipv4' ('coordinator', 'identifier')");
+                        logger.info("Created index idx_ipv4_coordinator_identifier on ipv4 table");
+                    } else {
+                        logger.info("Index idx_ipv4_coordinator_identifier already exists, skipping creation");
+                    }
+                    // Index idx_ipv6_coordinator_identifier
+                    checkStmt.setString(1, "idx_ipv6_coordinator_identifier");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_ipv6_coordinator_identifier' ON 'ipv6' ('coordinator', 'identifier')");
+                        logger.info("Created index idx_ipv6_coordinator_identifier on ipv6 table");
+                    } else {
+                        logger.info("Index idx_ipv6_coordinator_identifier already exists, skipping creation");
+                    }
+                }
                 connSQLite.commit();
                 logger.info("Database initialized");
             } catch (SQLException e) {
@@ -90,5 +117,4 @@ public class initializeDatabase {
         }
         return this;
     }
-
 }

@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS asn (
     UNIQUE(coordinator, asn, identifier)
 );
 CREATE INDEX 'idx_asn_asn' ON 'asn' ('asn');
-
 -- Таблиця для IPv4-записів
 CREATE TABLE IF NOT EXISTS ipv4 (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,7 +20,7 @@ CREATE TABLE IF NOT EXISTS ipv4 (
     identifier TEXT NOT NULL,
     UNIQUE(coordinator, network, identifier)
 );
-
+CREATE INDEX 'idx_ipv4_coordinator_identifier' ON 'ipv4' ('coordinator', 'identifier');
 -- Таблиця для IPv6-записів
 CREATE TABLE IF NOT EXISTS ipv6 (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +31,7 @@ CREATE TABLE IF NOT EXISTS ipv6 (
     identifier TEXT NOT NULL,
     UNIQUE(coordinator, network, identifier)
 );
-
+CREATE INDEX 'idx_ipv6_coordinator_identifier' ON 'ipv6' ('coordinator', 'identifier');
 -- Таблиця для метаданих файлів
 CREATE TABLE IF NOT EXISTS file_metadata (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
