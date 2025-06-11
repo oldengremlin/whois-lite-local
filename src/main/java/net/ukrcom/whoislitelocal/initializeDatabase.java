@@ -48,7 +48,6 @@ public class initializeDatabase {
                         date TEXT NOT NULL,
                         identifier TEXT NOT NULL,
                         name TEXT,
-                        geo TEXT,
                         UNIQUE(coordinator, asn, identifier)
                     )""");
                 stmt.execute("""
@@ -74,6 +73,13 @@ public class initializeDatabase {
                         date TEXT NOT NULL,
                         identifier TEXT NOT NULL,
                         UNIQUE(coordinator, network, identifier)
+                    )""");
+                stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS geo (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ipaddress TEXT,
+                        geo TEXT,
+                        UNIQUE(ipaddress)
                     )""");
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS rpsl (

@@ -18,10 +18,29 @@ package net.ukrcom.whoislitelocal;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.sql.SQLException;
+import org.apache.commons.cli.ParseException;
 
 public class WhoisLiteLocal {
 
     public static void main(String[] args) {
+        try {
+            CommandLineParser parser = new CommandLineParser(args);
+            if (parser.isHelpRequested()) {
+                CommandLineParser.printHelp();
+                System.exit(0xff);
+            } else if (parser.isGetData()) {
+                executeGetData();
+            } else {
+                CommandLineParser.printHelp();
+                System.exit(0xfd);
+            }
+        } catch (ParseException ex) {
+            CommandLineParser.printHelp();
+            System.exit(0xfe);
+        }
+    }
+
+    private static void executeGetData() {
         try {
             new initializeDatabase().createTables();
             new processFiles().process("urls_extended", new parseExtended());
