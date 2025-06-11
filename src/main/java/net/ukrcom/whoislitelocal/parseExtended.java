@@ -19,12 +19,16 @@ import inet.ipaddr.AddressStringException;
 import inet.ipaddr.IPAddress;
 import inet.ipaddr.IPAddressString;
 import inet.ipaddr.IncompatibleAddressException;
+import java.math.BigInteger;
+import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  *
@@ -104,7 +108,8 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         }
     }
 
-    private void processAsn(processFiles pf, String coordinator, String country, String value, String date, String identifier) throws SQLException {
+    private void processAsn(processFiles pf, String coordinator, String country, String value, String date, String identifier) throws
+            SQLException {
         int asn = IpUtils.validateAsn(value);
         try (PreparedStatement selectStmt = pf.connection.prepareStatement(
                 "SELECT coordinator, identifier FROM asn WHERE asn = ?")) {
@@ -143,18 +148,16 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         }
     }
 
-    private void processIpv4(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws UnknownHostException, SQLException {
+    private void processIpv4(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws
+            UnknownHostException, SQLException {
         String ipv4Network = IpUtils.ipv4ToCidr(value, Integer.parseInt(countOrPrefix));
 
         String firstip = null;
+        String lastip = null;
         try {
             IPAddress ipv4Address = new IPAddressString(ipv4Network).toAddress();
-            if (ipv4Address.getCount().longValue() <= 2) {
-                firstip = ipv4Address.getLower().toString();
-            } else {
-                firstip = ipv4Address.getLower().increment(1).toString();
-            }
-            firstip = firstip.replaceFirst("/\\d+$", "/32");
+            firstip = IPBigIntegerWithZero(IP2BigInteger(ipv4Address.getLower().toString()).toString());
+            lastip = IPBigIntegerWithZero(IP2BigInteger(ipv4Address.getUpper().toString()).toString());
         } catch (AddressStringException | IncompatibleAddressException e) {
             pf.logger.error("Invalid network {} : {}", ipv4Network, e);
         }
@@ -168,30 +171,29 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             tempStmt.executeBatch();
         }
         try (PreparedStatement mainStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO ipv4 (coordinator, country, network, date, identifier, firstip) VALUES (?, ?, ?, ?, ?, ?)")) {
+                "INSERT OR IGNORE INTO ipv4 (coordinator, country, network, date, identifier, firstip, lastip) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             mainStmt.setString(1, coordinator);
             mainStmt.setString(2, country);
             mainStmt.setString(3, ipv4Network);
             mainStmt.setString(4, date);
             mainStmt.setString(5, identifier);
             mainStmt.setString(6, firstip);
+            mainStmt.setString(7, lastip);
             mainStmt.addBatch();
             mainStmt.executeBatch();
         }
     }
 
-    private void processIpv6(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws UnknownHostException, SQLException {
+    private void processIpv6(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws
+            UnknownHostException, SQLException {
         String ipv6Network = IpUtils.ipv6ToCidr(value, Integer.parseInt(countOrPrefix));
 
         String firstip = null;
+        String lastip = null;
         try {
             IPAddress ipv6Address = new IPAddressString(ipv6Network).toAddress();
-            if (ipv6Address.getCount().longValue() <= 2) {
-                firstip = ipv6Address.getLower().toString();
-            } else {
-                firstip = ipv6Address.getLower().increment(1).toString();
-            }
-            firstip = firstip.replaceFirst("/\\d+$", "/128");
+            firstip = IPBigIntegerWithZero(IP2BigInteger(ipv6Address.getLower().toString()).toString());
+            lastip = IPBigIntegerWithZero(IP2BigInteger(ipv6Address.getUpper().toString()).toString());
         } catch (AddressStringException | IncompatibleAddressException e) {
             pf.logger.error("Invalid network {} : {}", ipv6Network, e);
         }
@@ -205,19 +207,21 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             tempStmt.executeBatch();
         }
         try (PreparedStatement mainStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO ipv6 (coordinator, country, network, date, identifier, firstip) VALUES (?, ?, ?, ?, ?, ?)")) {
+                "INSERT OR IGNORE INTO ipv6 (coordinator, country, network, date, identifier, firstip, lastip) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             mainStmt.setString(1, coordinator);
             mainStmt.setString(2, country);
             mainStmt.setString(3, ipv6Network);
             mainStmt.setString(4, date);
             mainStmt.setString(5, identifier);
             mainStmt.setString(6, firstip);
+            mainStmt.setString(7, lastip);
             mainStmt.addBatch();
             mainStmt.executeBatch();
         }
     }
 
-    private void cleanupNetworks(processFiles pf, String coordinator, String identifier) throws SQLException {
+    private void cleanupNetworks(processFiles pf, String coordinator, String identifier) throws
+            SQLException {
         try (PreparedStatement deleteIpv4Stmt = pf.connection.prepareStatement(
                 "DELETE FROM ipv4 WHERE coordinator = ? AND identifier = ?")) {
             deleteIpv4Stmt.setString(1, coordinator);
@@ -267,6 +271,29 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         // Clear temporary tables (but don't drop them)
         pf.connection.createStatement().execute("DELETE FROM temp_ipv4");
         pf.connection.createStatement().execute("DELETE FROM temp_ipv6");
+    }
+
+    public static BigInteger IP2BigInteger(String ipAddress) throws
+            UnknownHostException {
+//        ipAddress = ipAddress.replaceFirst("/\\d+$", "");
+//        InetAddress ipInetAddress = InetAddress.getByName(ipAddress);
+//        byte[] ipBytes = ipInetAddress.getAddress();
+//        return new BigInteger(1, ipBytes); // 1 означає додатне число
+        IPAddressString ipStr = new IPAddressString(ipAddress);
+        IPAddress ip = ipStr.getAddress();
+        if (ip == null) {
+            return null;
+        }
+        return ip.getValue();
+    }
+
+    public static String IPBigIntegerWithZero(String strIPBigInt) {
+        StringBuilder resultStr = new StringBuilder();
+        for (int i = 0; i < 40 - strIPBigInt.length(); i++) {
+            resultStr.append("0");
+        }
+        resultStr.append(strIPBigInt);
+        return resultStr.toString();
     }
 
     @Override

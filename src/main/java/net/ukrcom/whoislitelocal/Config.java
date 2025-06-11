@@ -27,6 +27,7 @@ public class Config {
 
     private static final Logger logger = (Logger) LoggerFactory.getLogger(WhoisLiteLocal.class);
     private static final String DB_URL = "jdbc:sqlite:whoislitelocal.db";
+//    private static final String DB_URL = "jdbc:log4jdbc:sqlite:whoislitelocal.db";
     private static final String PROPERTIES_FILE = "whoislitelocal.properties";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final int CONNECT_TIMEOUT = 10_000; // 10 seconds

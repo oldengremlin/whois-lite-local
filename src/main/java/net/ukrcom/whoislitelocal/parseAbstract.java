@@ -15,11 +15,18 @@
  */
 package net.ukrcom.whoislitelocal;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import org.apache.commons.compress.compressors.CompressorException;
+import org.apache.commons.compress.compressors.CompressorInputStream;
+import org.apache.commons.compress.compressors.CompressorStreamFactory;
 
 /**
  *
@@ -32,7 +39,13 @@ public class parseAbstract implements parseInterface {
     @Override
     public void parse(processFiles pf) {
         // Parse temporary file
-        try (BufferedReader reader = Files.newBufferedReader(pf.tempFile)) {
+//        try (BufferedReader reader = Files.newBufferedReader(pf.tempFile)) {
+        try (
+                InputStream fileIn = Files.newInputStream(pf.tempFile);
+                BufferedInputStream bufferedIn = new BufferedInputStream(fileIn);
+                InputStream decompressedIn = tryDecompress(bufferedIn);
+                InputStreamReader decoder = new InputStreamReader(decompressedIn, StandardCharsets.UTF_8);
+                BufferedReader reader = new BufferedReader(decoder)) {
             while ((this.line = reader.readLine()) != null) {
                 store(pf);
             }
@@ -48,6 +61,8 @@ public class parseAbstract implements parseInterface {
             }
         } catch (IOException ex) {
             pf.logger.error("Can't parsing temporary file {}", pf.tempFile);
+        } catch (CompressorException ex) {
+            pf.logger.error("Compression error while parsing {}", pf.tempFile, ex);
         } finally {
             // Delete temporary file
             try {
@@ -64,4 +79,15 @@ public class parseAbstract implements parseInterface {
         throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
     }
 
+    protected InputStream tryDecompress(BufferedInputStream in) throws
+            CompressorException, IOException {
+        in.mark(1024); // Дозволяє повернутися назад, якщо не вдасться розпізнати формат
+        try {
+            CompressorInputStream compressorIn = new CompressorStreamFactory().createCompressorInputStream(in);
+            return compressorIn;
+        } catch (CompressorException e) {
+            in.reset(); // Якщо не вдалося розпакувати — повертаємось і читаємо як звичайний текст
+            return in;
+        }
+    }
 }

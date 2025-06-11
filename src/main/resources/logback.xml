@@ -28,4 +28,5 @@
     </root>
     <!-- Логер для операцій з базою даних -->
     <logger name="net.ukrcom.whoislitelocal" level="DEBUG"/>
+    <!--<logger name="jdbc.sqlonly" level="INFO"/>-->
 </configuration>

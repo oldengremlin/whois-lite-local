@@ -3,8 +3,13 @@
 *.gz
 *.sh
 *.db
+*.bak
+*.~
+*~
 logs/*.gz
 whoislitelocal.db
+*.db-journal 
+geolocations-latest
 
 # Compiled class file
 *.class

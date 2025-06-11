@@ -35,6 +35,12 @@
             <artifactId>commons-compress</artifactId>
             <version>1.27.1</version>
         </dependency>
+        <!-- JDBC SQL log -->
+<!--        <dependency>
+            <groupId>com.googlecode.log4jdbc</groupId>
+            <artifactId>log4jdbc</artifactId>
+            <version>1.2</version>
+        </dependency>-->
     </dependencies>
     <build>
         <plugins>

@@ -27,6 +27,7 @@ public class WhoisLiteLocal {
             new processFiles().process("urls_extended", new parseExtended());
             new processFiles().process("asnames", new parseAsnames());
             new processFiles().process("geolocations", new parseGeolocations());
+            new processFiles().process("ripedb", new parseRpsl());
         } catch (IOException e) {
             Config.getLogger().error("Main process (IOException)", e);
         } catch (SQLException e) {

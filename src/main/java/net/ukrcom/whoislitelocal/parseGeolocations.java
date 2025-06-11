@@ -15,10 +15,13 @@
  */
 package net.ukrcom.whoislitelocal;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.math.BigInteger;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.sql.Connection;
@@ -27,27 +30,48 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
+import org.apache.commons.compress.compressors.CompressorException;
+import static net.ukrcom.whoislitelocal.parseExtended.IP2BigInteger;
+import static net.ukrcom.whoislitelocal.parseExtended.IPBigIntegerWithZero;
 
 public class parseGeolocations extends parseAbstract implements parseInterface {
 
     private final Map<String, String> geoCache = new HashMap<>(); // Кеш для зменшення запитів до БД
+    private final Map<String, String> geoIPCache = new HashMap<>(); // Кеш для зменшення запитів до БД
+    private processFiles pf;
 
     @Override
     public void parse(processFiles pf) {
-        try (InputStream fileIn = Files.newInputStream(pf.tempFile); BZip2CompressorInputStream bzIn = new BZip2CompressorInputStream(fileIn); BufferedReader reader = new BufferedReader(new InputStreamReader(bzIn, StandardCharsets.UTF_8))) {
+        this.pf = pf;
+        try (
+                InputStream fileIn = Files.newInputStream(pf.tempFile);
+                BufferedInputStream bufferedIn = new BufferedInputStream(fileIn);
+                InputStream decompressedIn = tryDecompress(bufferedIn);
+                InputStreamReader decoder = new InputStreamReader(decompressedIn, StandardCharsets.UTF_8);
+                BufferedReader reader = new BufferedReader(decoder)) {
             // Зберігаємо з'єднання для батчів
             Connection conn = pf.connection;
+
+            // Очистити поле geo в таблиці asn
+            try (PreparedStatement clearStmt = conn.prepareStatement("UPDATE asn SET geo = ''")) {
+                int updated = clearStmt.executeUpdate();
+                pf.logger.info("Cleared geo for {} ASN records", updated);
+            } catch (SQLException ex) {
+                pf.logger.error("Failed to cleared geo", ex);
+            }
+
             try (
                     PreparedStatement selectStmt = conn.prepareStatement(
-                            "SELECT coordinator, identifier FROM ipv4 WHERE firstip = ? UNION ALL "
-                            + "SELECT coordinator, identifier FROM ipv6 WHERE firstip = ?"); PreparedStatement selectAsnStmt = conn.prepareStatement(
-                            "SELECT geo FROM asn WHERE coordinator = ? AND identifier = ?"); PreparedStatement updateStmt = conn.prepareStatement(
+                            "SELECT coordinator, identifier, network, firstip, lastip FROM ipv4 WHERE firstip <= ? AND lastip >= ?"
+                            + "UNION ALL "
+                            + "SELECT coordinator, identifier, network, firstip, lastip FROM ipv6 WHERE firstip <= ? AND lastip >= ?");
+                    PreparedStatement selectAsnStmt = conn.prepareStatement(
+                            "SELECT geo FROM asn WHERE coordinator = ? AND identifier = ?");
+                    PreparedStatement updateStmt = conn.prepareStatement(
                             "UPDATE asn SET geo = ? WHERE coordinator = ? AND identifier = ?");) {
-
                 int batchSize = 0;
                 while ((this.line = reader.readLine()) != null) {
-                    if (store(pf, selectStmt, selectAsnStmt, updateStmt)) {
+                    if (store(selectStmt, selectAsnStmt, updateStmt)) {
                         batchSize++;
                         if (batchSize >= 1000) { // Виконуємо батч кожні 1000 записів
                             updateStmt.executeBatch();
@@ -73,6 +97,8 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
             }
         } catch (IOException ex) {
             pf.logger.error("Can't parse temporary file {}", pf.tempFile, ex);
+        } catch (CompressorException ex) {
+            pf.logger.error("Compression error while parsing {}", pf.tempFile, ex);
         } finally {
             try {
                 Files.delete(pf.tempFile);
@@ -83,14 +109,15 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
         }
     }
 
-    private boolean store(processFiles pf, PreparedStatement selectStmt, PreparedStatement selectAsnStmt, PreparedStatement updateStmt) {
+    private boolean store(PreparedStatement selectStmt, PreparedStatement selectAsnStmt, PreparedStatement updateStmt) throws
+            UnknownHostException {
         if (this.line.trim().isEmpty()) {
-            return false; // Skip empty lines
+            return false;
         }
 
         String[] fields = this.line.split(",");
         if (fields.length < 6) {
-            pf.logger.warn("Invalid geolocations line format: {}", this.line);
+            this.pf.logger.warn("Invalid geolocations line format: {}", this.line);
             return false;
         }
 
@@ -99,57 +126,103 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
         String region = fields[3];      // Kiev City
         String countryName = fields[4]; // Ukraine
         String countryCode = fields[5]; // UA
-
-        // Формуємо поле geo
         String geo = String.join(",", city, region, countryName, countryCode);
+
         if (geo.isEmpty() || countryCode.length() != 2) {
-            pf.logger.warn("Invalid geo data in line: {}", this.line);
+            this.pf.logger.warn("Invalid geo data in line: {}", this.line);
             return false;
         }
 
         try {
-            // Шукаємо мережу за firstip (перевіряємо і ipv4, і ipv6 через UNION ALL)
-            selectStmt.setString(1, ipAddress);
-            selectStmt.setString(2, ipAddress);
+
+            ipAddress = ipAddress.replaceFirst("\\d+/\\d+$", "0/24");
+            if (geoIPCache.containsKey(ipAddress) && geoIPCache.get(ipAddress).equals(geo + "|")) {
+                return false;
+            }
+
+            BigInteger ipBigInt = IP2BigInteger(ipAddress);
+            String ipBigIntStr = IPBigIntegerWithZero(ipBigInt.toString());
+
+            selectStmt.setString(1, ipBigIntStr);
+            selectStmt.setString(2, ipBigIntStr);
+            selectStmt.setString(3, ipBigIntStr);
+            selectStmt.setString(4, ipBigIntStr);
+
+            String bestCoordinator = null;
+            String bestIdentifier = null;
+            String bestNetwork = null;
+            BigInteger minRange = null;
+
             try (ResultSet rs = selectStmt.executeQuery()) {
-                if (rs.next()) {
+                while (rs.next()) {
+
+                    //this.pf.logger.warn("{} <-- {}", selectStmt, ipBigIntStr);
                     String coordinator = rs.getString("coordinator");
                     String identifier = rs.getString("identifier");
-                    String cacheKey = coordinator + "|" + identifier;
+                    String network = rs.getString("network");
 
-                    // Перевіряємо кеш
-                    if (geoCache.containsKey(cacheKey)) {
-                        if (geoCache.get(cacheKey).equals(geo)) {
-                            return false; // Geo не змінилося, пропускаємо
-                        }
+                    BigInteger firstIp = new BigInteger(rs.getString("firstip"));
+                    BigInteger lastIp = new BigInteger(rs.getString("lastip"));
+                    BigInteger range = lastIp.subtract(firstIp);
+
+                    if (minRange == null || range.compareTo(minRange) < 0) {
+                        minRange = range;
+                        bestCoordinator = coordinator;
+                        bestIdentifier = identifier;
+                        bestNetwork = network;
                     }
 
-                    // Шукаємо ASN за coordinator і identifier
-                    selectAsnStmt.setString(1, coordinator);
-                    selectAsnStmt.setString(2, identifier);
-                    try (ResultSet asnRs = selectAsnStmt.executeQuery()) {
-                        if (asnRs.next()) {
-                            String existingGeo = asnRs.getString("geo");
-                            if (existingGeo == null || !existingGeo.equals(geo)) {
-                                // Додаємо до батча для оновлення
-                                updateStmt.setString(1, geo);
-                                updateStmt.setString(2, coordinator);
-                                updateStmt.setString(3, identifier);
-                                updateStmt.addBatch();
-                                geoCache.put(cacheKey, geo); // Оновлюємо кеш
+                }
+            }
 
-                                pf.logger.info("Updated geo for coordinator={}, identifier={}: {}", coordinator, identifier, geo);
+            if (bestCoordinator != null) {
 
-                                return true;
+                String cacheKey = bestCoordinator + "|" + bestIdentifier;
+                if (geoCache.containsKey(cacheKey) && geoCache.get(cacheKey).equals(geo)) {
+                    return false;
+                }
+
+                this.pf.logger.debug("GEO: ipAddress={} ({}) — {}", ipAddress, ipBigIntStr, geo);
+
+                selectAsnStmt.setString(1, bestCoordinator);
+                selectAsnStmt.setString(2, bestIdentifier);
+
+                try (ResultSet asnRs = selectAsnStmt.executeQuery()) {
+                    if (asnRs.next()) {
+
+                        String existingGeo = asnRs.getString("geo");
+
+                        if (existingGeo == null || !existingGeo.equals(geo)) {
+
+                            String newGeo = geo + "|";
+                            if (existingGeo != null && geo != null && existingGeo.indexOf(newGeo) > 0) {
+                                return false;
                             }
+                            newGeo += existingGeo;
+
+                            this.pf.logger.info("new GEO: ipAddress={} ({}) — {}", ipAddress, ipBigIntStr, newGeo);
+
+                            updateStmt.setString(1, newGeo);
+                            updateStmt.setString(2, bestCoordinator);
+                            updateStmt.setString(3, bestIdentifier);
+                            updateStmt.addBatch();
+
+                            geoCache.put(cacheKey, newGeo);
+                            geoIPCache.put(ipAddress, newGeo);
+
+                            this.pf.logger.info("Updated geo for coordinator={}, identifier={}: {}",
+                                    bestCoordinator, bestIdentifier, newGeo);
+
+                            return true;
                         }
+
                     }
                 }
             }
+            // this.pf.logger.warn("No network found for IP {} in ipv4 or ipv6", ipAddress);
         } catch (SQLException e) {
-            pf.logger.error("Failed to process geolocations line: {}", this.line, e);
+            this.pf.logger.error("Failed to process geolocations line: {}", this.line, e);
         }
-        // pf.logger.warn("No network found for IP {} in ipv4 or ipv6", ipAddress);
         return false;
     }
 }

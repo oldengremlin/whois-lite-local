@@ -58,6 +58,7 @@ public class initializeDatabase {
                         country TEXT NOT NULL,
                         network TEXT NOT NULL,
                         firstip TEXT,
+                        lastip TEXT,
                         date TEXT NOT NULL,
                         identifier TEXT NOT NULL,
                         UNIQUE(coordinator, network, identifier)
@@ -69,9 +70,18 @@ public class initializeDatabase {
                         country TEXT NOT NULL,
                         network TEXT NOT NULL,
                         firstip TEXT,
+                        lastip TEXT,
                         date TEXT NOT NULL,
                         identifier TEXT NOT NULL,
                         UNIQUE(coordinator, network, identifier)
+                    )""");
+                stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS rpsl (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        key TEXT NOT NULL,
+                        value TEXT NOT NULL,
+                        block TEXT NOT NULL,
+                        UNIQUE(key, value)
                     )""");
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS file_metadata (
@@ -109,6 +119,15 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_ipv4_firstip already exists, skipping creation");
                     }
+                    // Index idx_ipv4_lastip
+                    checkStmt.setString(1, "idx_ipv4_lastip");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_ipv4_lastip' ON 'ipv4' ('lastip')");
+                        logger.info("Created index idx_ipv4_lastip on ipv4 table");
+                    } else {
+                        logger.info("Index idx_ipv4_lastip already exists, skipping creation");
+                    }
                     // Index idx_ipv6_coordinator_identifier
                     checkStmt.setString(1, "idx_ipv6_coordinator_identifier");
                     rs = checkStmt.executeQuery();
@@ -127,7 +146,24 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_ipv6_firstip already exists, skipping creation");
                     }
-
+                    // Index idx_ipv6_lastip
+                    checkStmt.setString(1, "idx_ipv6_lastip");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_ipv6_lastip' ON 'ipv6' ('lastip')");
+                        logger.info("Created index idx_ipv6_lastip on ipv6 table");
+                    } else {
+                        logger.info("Index idx_ipv6_lastip already exists, skipping creation");
+                    }
+                    // Index idx_rpsl_kv
+                    checkStmt.setString(1, "idx_rpsl_kv");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_rpsl_kv' ON 'rpsl' ('key','value')");
+                        logger.info("Created index idx_rpsl_kv on rpsl table");
+                    } else {
+                        logger.info("Index idx_rpsl_kv already exists, skipping creation");
+                    }
                 }
                 connSQLite.commit();
                 logger.info("Database initialized");
