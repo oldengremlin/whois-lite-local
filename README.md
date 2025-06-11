@@ -9,4 +9,4 @@ java -jar WhoisLiteLocal-1.0.0.jar [--get-data]
 ```
 
 * --get-data, -g: Download and process data from configured URLs (default behavior).
-* --help, -h: Show help message (planned).
+* --help, -h: Show help message.
