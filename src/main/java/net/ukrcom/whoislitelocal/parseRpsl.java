@@ -83,7 +83,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     private processFiles pf;
     private int batchCount = 0;
     private boolean needInitializeTempTables = true;
-    private boolean needSave = false;
+    private boolean beginBlock = false;
     private boolean ignoreNext = false;
     private int linesOfBlock = 0;
     private StringBuilder block;
@@ -135,10 +135,6 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 while ((this.line = reader.readLine()) != null) {
                     if (!this.line.startsWith("#")) {
                         store(this.pf);
-                        // Check if block is complete (new block started or end of file)
-                        if (this.needSave && this.linesOfBlock > 0 && this.block != null && !this.block.isEmpty()) {
-                            saveBlock();
-                        }
                     }
                 }
 
@@ -186,22 +182,38 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
     @Override
     public void store(processFiles pf) {
+
+//        this.pf.logger.debug("0. line=\"{}\"\n"
+//                + "                                                                                      "
+//                + "   ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}",
+//                this.line, this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
         if (this.line.trim().isEmpty()) {
             initBeginBlock();
+//            this.pf.logger.debug("1. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
+            return;
+        } else if (this.ignoreNext) {
+//            this.pf.logger.debug("2. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
             return;
         } else if (this.linesOfBlock == 0 && isBlockAlreadyPresent()) {
             this.ignoreNext = true;
-            return;
-        } else if (this.ignoreNext) {
+//            this.pf.logger.debug("3. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
             return;
         }
         this.block.append(this.line.trim());
         this.block.append("\n");
         this.linesOfBlock++;
+
+//        this.pf.logger.debug("4. line=\"{}\"\n"
+//                + "                                                                                      "
+//                + "   ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}, block=\n{}",
+//                this.line, this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value, this.block.toString());
     }
 
     private void initBeginBlock() {
-        this.needSave = true;
+        if (this.linesOfBlock > 0) {
+            saveBlock();
+        }
+        this.beginBlock = true;
         this.linesOfBlock = 0;
         this.ignoreNext = false;
         this.block = new StringBuilder();
@@ -226,9 +238,9 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         return false;
     }
 
-    private void saveBlock() throws Exception {
+    private void saveBlock() {
 
-        this.needSave = false;
+        this.beginBlock = false;
         if (this.key == null || this.value == null || this.block == null || this.block.isEmpty()) {
             return;
         }
@@ -241,8 +253,8 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
                 String existingShaBlock = rs.getString("shablock");
                 String shaBlock = sha512(this.block.toString());
-                this.pf.logger.info("[{}] SHA512 DB: [ {} ]", this.batchCount, existingShaBlock);
-                this.pf.logger.info("[{}] SHA512   : [ {} ]", this.batchCount, shaBlock);
+                this.pf.logger.info("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
+                this.pf.logger.info("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
                 if (existingShaBlock.equals(shaBlock)) {
                     return;
                 }
@@ -251,13 +263,13 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.storeUpdateStmt.setString(2, this.key);
                 this.storeUpdateStmt.setString(3, this.value);
                 this.storeUpdateStmt.executeUpdate();
-                this.pf.logger.info("Update RPSL records for [{}:{}]", key, value);
+                this.pf.logger.info("Update RPSL records for [{} : {}]", this.key, this.value);
             } else {
                 this.storeInsertStmt.setString(1, this.key);
                 this.storeInsertStmt.setString(2, this.value);
                 this.storeInsertStmt.setString(3, this.block.toString());
                 this.storeInsertStmt.addBatch();
-                this.pf.logger.debug("Insert RPSL records for [{}:{}]", key, value);
+                this.pf.logger.debug("Insert RPSL records for [{} : {}]", this.key, this.value);
             }
 
             this.storeTempStmt.setString(1, this.key);
@@ -273,6 +285,8 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
         } catch (SQLException ex) {
             this.pf.logger.warn("Can't add RPSL [{}:{}] to batch, SQLException {}", this.key, this.value, ex);
+        } catch (Exception ex) {
+            this.pf.logger.warn("Exception {}", ex);
         }
     }
 
