@@ -45,7 +45,8 @@ public class retrieveMntBy {
             registerRegexpFunction(conn);
             try (PreparedStatement selectStmt = conn.prepareStatement(
                     "SELECT block FROM rpsl WHERE key IN (\"aut-num\", \"as-set\") AND block REGEXP ?")) {
-                selectStmt.setString(1, "(?m)^mnt-by: *" + this.mntBy);
+                String escapedMntBy = this.mntBy.replaceAll("[^a-zA-Z0-9-]", "");
+                selectStmt.setString(1, "(?m)^mnt-by: *" + escapedMntBy);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
                     this.mntByBlock = rs.getString("block");
