@@ -16,11 +16,16 @@
 package net.ukrcom.whoislitelocal;
 
 import ch.qos.logback.classic.Logger;
+import java.io.UnsupportedEncodingException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.logging.Level;
+import org.sqlite.Function;
 
 /**
  *
@@ -38,6 +43,8 @@ public class initializeDatabase {
         try (Connection connSQLite = DriverManager.getConnection(Config.getDBUrl())) {
             connSQLite.setAutoCommit(false);
             try (var stmt = connSQLite.createStatement()) {
+                stmt.execute("PRAGMA auto_vacuum = INCREMENTAL");
+//                stmt.execute("VACUUM");
                 // Create tables
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS asn (
@@ -85,7 +92,7 @@ public class initializeDatabase {
                     CREATE TABLE IF NOT EXISTS rpsl (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         key TEXT NOT NULL,
-                        value TEXT NOT NULL,
+                        value TEXT NOT NULL COLLATE NOCASE,
                         block TEXT NOT NULL,
                         UNIQUE(key, value)
                     )""");
@@ -180,5 +187,44 @@ public class initializeDatabase {
             }
         }
         return this;
+    }
+
+    public static void registerSha512Function(Connection conn) throws
+            SQLException {
+        Function.create(conn, "sha512", new Function() {
+            @Override
+            protected void xFunc() throws SQLException {
+                if (args() != 1) {
+                    throw new SQLException("sha512(text) requires one argument");
+                }
+                try {
+                    String input = value_text(0);
+                    MessageDigest md = MessageDigest.getInstance("SHA-512");
+                    byte[] hash = md.digest(input.getBytes("UTF-8"));
+                    StringBuilder hex = new StringBuilder();
+                    for (byte b : hash) {
+                        hex.append(String.format("%02x", b));
+                    }
+                    result(hex.toString());
+                } catch (UnsupportedEncodingException | NoSuchAlgorithmException | SQLException e) {
+                    throw new SQLException("SQL SHA-512 error", e);
+                }
+            }
+        });
+    }
+
+    public static String sha512(String input) throws Exception {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-512");
+            byte[] hash = md.digest(input.getBytes("UTF-8"));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new Exception("SHA-512 error", ex);
+        }
+
     }
 }

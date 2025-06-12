@@ -26,7 +26,30 @@ import static net.ukrcom.whoislitelocal.parseExtended.IPBigIntegerWithZero;
 public class parseGeolocations extends parseAbstract implements parseInterface {
 
     private int batchCount = 0;
+    private PreparedStatement storeUpdateStmt;
+    private PreparedStatement storeInsertStmt;
     private static final int BATCH_SIZE = 1000;
+
+    @Override
+    public void parse(processFiles pf) {
+        try (PreparedStatement updateStmt = pf.connection.prepareStatement(
+                "UPDATE geo SET geo = ? WHERE ipaddress = ?");
+             PreparedStatement insertStmt = pf.connection.prepareStatement(
+                     "INSERT INTO geo (ipaddress, geo) VALUES (?, ?)")) {
+            storeUpdateStmt = updateStmt;
+            storeInsertStmt = insertStmt;
+
+            super.parse(pf);
+
+            if (batchCount > 0) {
+                storeUpdateStmt.executeBatch();
+                storeInsertStmt.executeBatch();
+            }
+            runIncrementalVacuumSmart(pf);
+        } catch (SQLException ex) {
+            pf.logger.warn("SQLException: {}", ex);
+        }
+    }
 
     @Override
     public void store(processFiles pf) {
@@ -74,29 +97,27 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                     }
                     String geoUpdate = existingGeo == null ? geo : existingGeo + "|" + geo;
 
-                    try (PreparedStatement updateStmt = pf.connection.prepareStatement(
-                            "UPDATE geo SET geo = ? WHERE ipaddress = ?")) {
-                        updateStmt.setString(1, geoUpdate);
-                        updateStmt.setString(2, ipBigIntStr);
-//                        updateStmt.executeUpdate();
-                        updateStmt.addBatch();
+                    try {
+                        storeUpdateStmt.setString(1, geoUpdate);
+                        storeUpdateStmt.setString(2, ipBigIntStr);
+                        storeUpdateStmt.addBatch();
                         pf.logger.info("Update GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
-                        if (++batchCount % BATCH_SIZE == 0) {
-                            updateStmt.executeBatch();
+                        if (++batchCount == BATCH_SIZE) {
+                            storeUpdateStmt.executeBatch();
+                            batchCount = 0;
                         }
                     } catch (SQLException ex) {
                         pf.logger.warn("Can't update GEO for {}: {} : ", ipBigIntStr, geo, ex);
                     }
                 } else {
-                    try (PreparedStatement insertStmt = pf.connection.prepareStatement(
-                            "INSERT INTO geo (ipaddress, geo) VALUES (?, ?)")) {
-                        insertStmt.setString(1, ipBigIntStr);
-                        insertStmt.setString(2, geo);
-//                        insertStmt.executeUpdate();
-                        insertStmt.addBatch();
+                    try {
+                        storeInsertStmt.setString(1, ipBigIntStr);
+                        storeInsertStmt.setString(2, geo);
+                        storeInsertStmt.addBatch();
                         pf.logger.debug("Insert GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
-                        if (++batchCount % BATCH_SIZE == 0) {
-                            insertStmt.executeBatch();
+                        if (++batchCount == BATCH_SIZE) {
+                            storeInsertStmt.executeBatch();
+                            batchCount = 0;
                         }
                     } catch (SQLException ex) {
                         pf.logger.warn("Can't insert GEO for {}: {} : ", ipBigIntStr, geo, ex);

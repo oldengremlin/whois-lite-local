@@ -31,6 +31,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Properties;
+import static net.ukrcom.whoislitelocal.initializeDatabase.registerSha512Function;
 
 /**
  *
@@ -49,7 +50,8 @@ public class processFiles {
         this.logger = Config.getLogger();
     }
 
-    public processFiles process(String paramUrls, parseInterface parseFile) throws IOException, SQLException, URISyntaxException {
+    public processFiles process(String paramUrls, parseInterface parseFile) throws
+            IOException, SQLException, URISyntaxException {
         if (paramUrls == null || paramUrls.trim().isEmpty()) {
             logger.info("No URLs configured for {}, skipping", paramUrls);
             return this;
@@ -60,6 +62,7 @@ public class processFiles {
         }
         String[] urls = props.getProperty(paramUrls).split(",");
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
+            registerSha512Function(conn);
             this.connection = conn;
             this.connection.setAutoCommit(false);
             for (String url : urls) {
@@ -77,7 +80,8 @@ public class processFiles {
         return this;
     }
 
-    private boolean shouldDownloadFile() throws SQLException, IOException, URISyntaxException {
+    private boolean shouldDownloadFile() throws SQLException, IOException,
+            URISyntaxException {
         try (PreparedStatement stmt = this.connection.prepareStatement(
                 "SELECT last_modified, file_size FROM file_metadata WHERE url = ?")) {
             stmt.setString(1, this.processUrl);
@@ -103,7 +107,8 @@ public class processFiles {
         }
     }
 
-    private void download() throws URISyntaxException, MalformedURLException, IOException {
+    private void download() throws URISyntaxException, MalformedURLException,
+            IOException {
         URI uri = new URI(this.processUrl);
         HttpURLConnection connHttp = (HttpURLConnection) uri.toURL().openConnection();
         connHttp.setConnectTimeout(Config.getConnectTimeout());

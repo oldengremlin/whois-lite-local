@@ -22,15 +22,13 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
+import static net.ukrcom.whoislitelocal.initializeDatabase.sha512;
 import org.apache.commons.compress.compressors.CompressorException;
-import org.apache.commons.compress.compressors.CompressorInputStream;
-import org.apache.commons.compress.compressors.CompressorStreamFactory;
 
 /**
  *
@@ -82,101 +80,106 @@ import org.apache.commons.compress.compressors.CompressorStreamFactory;
  */
 public class parseRpsl extends parseAbstract implements parseInterface {
 
+    private processFiles pf;
+    private int batchCount = 0;
     private boolean needInitializeTempTables = true;
-    private final Map<String, String> blockCache = new HashMap<>();
-    private boolean beginBlock = false;
+    private boolean needSave = false;
+    private boolean ignoreNext = false;
     private int linesOfBlock = 0;
     private StringBuilder block;
     private String key, value;
-    private processFiles pf;
-    private static final int BATCH_SIZE = 1000;
+    PreparedStatement storeSelectStmt, storeUpdateStmt, storeInsertStmt, storeTempStmt;
+
+    private final Map<String, String> blockCache = new HashMap<>();
+    private final int BATCH_SIZE = 1000;
 
     @Override
     public void parse(processFiles pf) {
         this.pf = pf;
         try (
-                InputStream fileIn = Files.newInputStream(pf.tempFile);
+                InputStream fileIn = Files.newInputStream(this.pf.tempFile);
                 BufferedInputStream bufferedIn = new BufferedInputStream(fileIn);
                 InputStream decompressedIn = tryDecompress(bufferedIn);
                 InputStreamReader decoder = new InputStreamReader(decompressedIn, StandardCharsets.UTF_8);
                 BufferedReader reader = new BufferedReader(decoder)) {
 
-            if (needInitializeTempTables) {
+            if (this.needInitializeTempTables) {
                 // Initialize temporary tables once per process
-                pf.connection.createStatement().execute("""
+                this.pf.connection.createStatement().execute("""
                     CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl (
                         key TEXT NOT NULL,
                         value TEXT NOT NULL,
                         UNIQUE(key, value)
                     )""");
-                needInitializeTempTables = false;
+                this.needInitializeTempTables = false;
             } else {
                 // Clear temporary tables for this file
-                pf.connection.createStatement().execute("DELETE FROM temp_rpsl");
+                this.pf.connection.createStatement().execute("DELETE FROM temp_rpsl");
             }
-            blockCache.clear();
+            this.blockCache.clear();
 
-            Connection conn = pf.connection;
-            try (PreparedStatement insertStmt = conn.prepareStatement(
-                    "INSERT OR REPLACE INTO rpsl (key, value, block) VALUES (?, ?, ?)");
-                 PreparedStatement tempStmt = pf.connection.prepareStatement(
+            try (PreparedStatement selectStmt = this.pf.connection.prepareStatement(
+                    "SELECT sha512(block) AS shablock FROM rpsl WHERE key=? AND value=?");
+                 PreparedStatement updateStmt = this.pf.connection.prepareStatement(
+                         "UPDATE rpsl SET block=? WHERE key=? AND value=?");
+                 PreparedStatement insertStmt = this.pf.connection.prepareStatement(
+                         "INSERT OR IGNORE INTO rpsl (key, value, block) VALUES (?, ?, ?)");
+                 PreparedStatement tempStmt = this.pf.connection.prepareStatement(
                          "INSERT OR IGNORE INTO temp_rpsl (key, value) VALUES (?, ?)")) {
-                int batchCount = 0;
+
+                this.storeSelectStmt = selectStmt;
+                this.storeUpdateStmt = updateStmt;
+                this.storeInsertStmt = insertStmt;
+                this.storeTempStmt = tempStmt;
+
                 while ((this.line = reader.readLine()) != null) {
                     if (!this.line.startsWith("#")) {
-                        store(pf);
+                        store(this.pf);
                         // Check if block is complete (new block started or end of file)
-                        if (beginBlock && linesOfBlock > 0 && block != null && !block.isEmpty()) {
-                            if (saveBlock(insertStmt, tempStmt)) {
-                                batchCount++;
-                                if (batchCount >= BATCH_SIZE) {
-                                    insertStmt.executeBatch();
-                                    tempStmt.executeBatch();
-                                    batchCount = 0;
-                                    pf.logger.info("Executed batch of {} RPSL records", BATCH_SIZE);
-                                }
-                            }
+                        if (this.needSave && this.linesOfBlock > 0 && this.block != null && !this.block.isEmpty()) {
+                            saveBlock();
                         }
                     }
                 }
+
                 // Save any remaining block
-                if (linesOfBlock > 0 && block != null && !block.isEmpty()) {
-                    if (saveBlock(insertStmt, tempStmt)) {
-                        batchCount++;
-                    }
+                if (this.linesOfBlock > 0 && this.block != null && !this.block.isEmpty()) {
+                    this.batchCount = this.BATCH_SIZE - 1;
+                    saveBlock();
                 }
-                // Execute remaining batch
-                if (batchCount > 0) {
-                    insertStmt.executeBatch();
-                    tempStmt.executeBatch();
-                    pf.logger.info("Executed final batch of {} RPSL records", batchCount);
-                }
+
+                runIncrementalVacuumSmart(pf);
+
             } catch (SQLException ex) {
-                pf.logger.error("Failed to process RPSL batch", ex);
+                this.pf.logger.error("Failed to process RPSL batch", ex);
+            } catch (Exception ex) {
+                this.pf.logger.error("Exception", ex);
             }
             // Update file metadata
-            try (PreparedStatement stmt = conn.prepareStatement(
+            try (PreparedStatement stmt = this.pf.connection.prepareStatement(
                     "INSERT OR REPLACE INTO file_metadata (url, last_modified, file_size) VALUES (?, ?, ?)")) {
-                stmt.setString(1, pf.processUrl);
-                stmt.setString(2, pf.lastModified);
-                stmt.setLong(3, pf.fileSize);
+                stmt.setString(1, this.pf.processUrl);
+                stmt.setString(2, this.pf.lastModified);
+                stmt.setLong(3, this.pf.fileSize);
                 stmt.executeUpdate();
             } catch (SQLException ex) {
-                pf.logger.error("Error storing metadata for URL {}, SQLException {}", pf.processUrl, ex);
+                this.pf.logger.error("Error storing metadata for URL {}, SQLException {}", this.pf.processUrl, ex);
             }
-            cleanupOutdatedRpsl(pf);
+
+            cleanupOutdatedRpsl(this.pf);
+
         } catch (IOException ex) {
-            pf.logger.error("Can't parse temporary file {}", pf.tempFile, ex);
+            this.pf.logger.error("Can't parse temporary file {}", this.pf.tempFile, ex);
         } catch (CompressorException ex) {
-            pf.logger.error("Compression error while parsing {}", pf.tempFile, ex);
+            this.pf.logger.error("Compression error while parsing {}", this.pf.tempFile, ex);
         } catch (SQLException ex) {
-            pf.logger.error("Failed to process file or cleanup rpsl", ex);
+            this.pf.logger.error("Failed to process file or cleanup rpsl", ex);
         } finally {
             try {
-                Files.delete(pf.tempFile);
-                pf.logger.info("Deleted temporary file {}", pf.tempFile);
+                Files.delete(this.pf.tempFile);
+                this.pf.logger.info("Deleted temporary file {}", this.pf.tempFile);
             } catch (IOException e) {
-                pf.logger.warn("Failed to delete temporary file {}: {}", pf.tempFile, e.getMessage());
+                this.pf.logger.warn("Failed to delete temporary file {}: {}", this.pf.tempFile, e.getMessage());
             }
         }
     }
@@ -186,7 +189,10 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         if (this.line.trim().isEmpty()) {
             initBeginBlock();
             return;
-        } else if (this.linesOfBlock == 0 && checkBeginBlock()) {
+        } else if (this.linesOfBlock == 0 && isBlockAlreadyPresent()) {
+            this.ignoreNext = true;
+            return;
+        } else if (this.ignoreNext) {
             return;
         }
         this.block.append(this.line.trim());
@@ -195,69 +201,104 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     }
 
     private void initBeginBlock() {
-        this.beginBlock = true;
+        this.needSave = true;
         this.linesOfBlock = 0;
+        this.ignoreNext = false;
         this.block = new StringBuilder();
     }
 
-    private boolean checkBeginBlock() {
-        pf.logger.info("Begin new block: {}", this.line);
+    private boolean isBlockAlreadyPresent() {
         String[] parts = this.line.split("\\s+", 2);
         if (parts.length < 2) {
-            pf.logger.warn("Invalid RPSL line format: {}", this.line);
+            this.pf.logger.warn("Invalid RPSL line format: {}", this.line);
             return true;
         }
-        key = parts[0].trim();
-        value = parts[1].trim();
-        if (blockCache.containsKey(key)) {
-            if (blockCache.get(key).equals(value)) {
-                pf.logger.warn("Object {} already exists in {}", value, key);
+        this.key = parts[0].trim().replaceFirst(":$", "");
+        this.value = parts[1].trim();
+        if (this.blockCache.containsKey(this.key)) {
+            if (this.blockCache.get(key).equals(this.value)) {
+                pf.logger.warn("Object {} already exists in {}", this.value, this.key);
                 return true;
             }
         }
-        blockCache.put(key, value);
+        this.pf.logger.info("Begin new block: [{} : {}]", this.key, this.value);
+        this.blockCache.put(this.key, this.value);
         return false;
     }
 
-    private boolean saveBlock(PreparedStatement insertStmt, PreparedStatement tempStmt) {
-        if (key == null || value == null || block == null || block.isEmpty()) {
-            return false;
+    private void saveBlock() throws Exception {
+
+        this.needSave = false;
+        if (this.key == null || this.value == null || this.block == null || this.block.isEmpty()) {
+            return;
         }
+
         try {
-            insertStmt.setString(1, this.key);
-            insertStmt.setString(2, this.value);
-            insertStmt.setString(3, this.block.toString());
-            insertStmt.addBatch();
+            this.storeSelectStmt.setString(1, this.key);
+            this.storeSelectStmt.setString(2, this.value);
+            ResultSet rs = storeSelectStmt.executeQuery();
+            if (rs.next()) {
 
-            tempStmt.setString(1, this.key);
-            tempStmt.setString(2, this.value);
-            tempStmt.addBatch();
+                String existingShaBlock = rs.getString("shablock");
+                String shaBlock = sha512(this.block.toString());
+                this.pf.logger.info("[{}] SHA512 DB: [ {} ]", this.batchCount, existingShaBlock);
+                this.pf.logger.info("[{}] SHA512   : [ {} ]", this.batchCount, shaBlock);
+                if (existingShaBlock.equals(shaBlock)) {
+                    return;
+                }
 
-            return true;
+                this.storeUpdateStmt.setString(1, this.block.toString());
+                this.storeUpdateStmt.setString(2, this.key);
+                this.storeUpdateStmt.setString(3, this.value);
+                this.storeUpdateStmt.executeUpdate();
+                this.pf.logger.info("Update RPSL records for [{}:{}]", key, value);
+            } else {
+                this.storeInsertStmt.setString(1, this.key);
+                this.storeInsertStmt.setString(2, this.value);
+                this.storeInsertStmt.setString(3, this.block.toString());
+                this.storeInsertStmt.addBatch();
+                this.pf.logger.debug("Insert RPSL records for [{}:{}]", key, value);
+            }
+
+            this.storeTempStmt.setString(1, this.key);
+            this.storeTempStmt.setString(2, this.value);
+            this.storeTempStmt.addBatch();
+
+            if (++this.batchCount >= BATCH_SIZE) {
+                this.storeInsertStmt.executeBatch();
+                this.storeTempStmt.executeBatch();
+                this.pf.logger.info("Executed batch of {} RPSL records", this.batchCount);
+                this.batchCount = 0;
+            }
+
         } catch (SQLException ex) {
-            pf.logger.warn("Can't add RPSL [{}:{}] to batch, SQLException {}", this.key, this.value, ex);
-            return false;
+            this.pf.logger.warn("Can't add RPSL [{}:{}] to batch, SQLException {}", this.key, this.value, ex);
         }
     }
 
     private void cleanupOutdatedRpsl(processFiles pf) throws SQLException {
-        if (blockCache.isEmpty()) {
-            pf.logger.info("No processed, skipping outdated rpsl cleanup");
+        if (this.blockCache.isEmpty()) {
+            this.pf.logger.info("No processed, skipping outdated rpsl cleanup");
             return;
         }
-        try (PreparedStatement deleteRpslStmt = pf.connection.prepareStatement(
+        try (PreparedStatement deleteRpslStmt = this.pf.connection.prepareStatement(
                 "DELETE FROM rpsl WHERE key = ? AND value = ? AND NOT EXISTS "
                 + "(SELECT 1 FROM temp_rpsl t WHERE t.key = rpsl.key AND t.value = rpsl.value)")) {
-            for (Map.Entry<String, String> entry : blockCache.entrySet()) {
+            for (Map.Entry<String, String> entry : this.blockCache.entrySet()) {
+
                 String blockKey = entry.getKey();
                 String blockValue = entry.getValue();
+
                 deleteRpslStmt.setString(1, blockKey);
                 deleteRpslStmt.setString(2, blockValue);
+
                 int deleted = deleteRpslStmt.executeUpdate();
                 if (deleted > 0) {
-                    pf.logger.info("Deleted {} outdated rpsl: [{} : {}]", deleted, blockKey, blockValue);
+                    this.pf.logger.info("Deleted {} outdated rpsl: [{} : {}]", deleted, blockKey, blockValue);
                 }
+
             }
         }
     }
+
 }

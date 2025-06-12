@@ -66,6 +66,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             super.parse(pf);
             // Cleanup outdated networks
             cleanupOutdatedNetworks(pf);
+            runIncrementalVacuumSmart(pf);
         } catch (SQLException e) {
             pf.logger.error("Failed to process file or cleanup networks", e);
         }

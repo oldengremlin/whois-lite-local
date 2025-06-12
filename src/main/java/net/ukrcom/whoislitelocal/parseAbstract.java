@@ -23,6 +23,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import org.apache.commons.compress.compressors.CompressorException;
 import org.apache.commons.compress.compressors.CompressorInputStream;
@@ -35,6 +36,7 @@ import org.apache.commons.compress.compressors.CompressorStreamFactory;
 public class parseAbstract implements parseInterface {
 
     protected String line;
+    protected int MAX_FREE_LIST_COUNT = 100;
 
     @Override
     public void parse(processFiles pf) {
@@ -49,6 +51,7 @@ public class parseAbstract implements parseInterface {
             while ((this.line = reader.readLine()) != null) {
                 store(pf);
             }
+            runIncrementalVacuumSmart(pf);
             // Update file metadata
             try (PreparedStatement stmt = pf.connection.prepareStatement(
                     "INSERT OR REPLACE INTO file_metadata (url, last_modified, file_size) VALUES (?, ?, ?)")) {
@@ -90,4 +93,34 @@ public class parseAbstract implements parseInterface {
             return in;
         }
     }
+
+    protected void runIncrementalVacuumSmart(processFiles pf) {
+        try (PreparedStatement stmt = pf.connection.prepareStatement("PRAGMA freelist_count");
+             ResultSet rs = stmt.executeQuery()) {
+
+            if (rs.next()) {
+                int freelistCount = rs.getInt(1);
+
+                if (freelistCount == 0) {
+                    return;
+                }
+
+                pf.logger.debug("Current freelist_count: {}", freelistCount);
+
+                if (freelistCount >= MAX_FREE_LIST_COUNT) { // поріг – налаштовується
+                    int pagesToVacuum = freelistCount / 2;
+                    try (PreparedStatement vacuumStmt = pf.connection.prepareStatement("PRAGMA incremental_vacuum(" + pagesToVacuum + ")")) {
+                        vacuumStmt.execute();
+                        pf.logger.debug("Ran incremental_vacuum({})", pagesToVacuum);
+                    }
+                } else {
+                    pf.logger.debug("freelist_count ({}) below threshold, skipping vacuum", freelistCount);
+                }
+            }
+
+        } catch (SQLException e) {
+            pf.logger.warn("Failed to check freelist_count or run incremental_vacuum: {}", e.getMessage());
+        }
+    }
+
 }
