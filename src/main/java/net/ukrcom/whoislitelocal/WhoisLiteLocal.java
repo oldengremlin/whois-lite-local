@@ -30,6 +30,8 @@ public class WhoisLiteLocal {
                 System.exit(0xff);
             } else if (parser.isGetData()) {
                 executeGetData();
+            } else if (parser.isRetrieveAutNum()) {
+                executeRetrieveAutNum(parser.getAutNum());
             } else {
                 CommandLineParser.printHelp();
                 System.exit(0xfd);
@@ -54,6 +56,10 @@ public class WhoisLiteLocal {
         } catch (URISyntaxException e) {
             Config.getLogger().error("Main process (URISyntaxException)", e);
         }
+    }
+
+    private static void executeRetrieveAutNum(String autNum) {
+        new retrieveAutNum(autNum).printAutNum().printOrg();
     }
 
 }

@@ -34,6 +34,30 @@ public class CommandLineParser {
                             .desc("Download and process data from configured URLs")
                             .build()
             )
+            .addOption(
+                    Option.builder("ran").longOpt("retrieve-aut-num")
+                            .hasArg()
+                            .argName("AS-num")
+                            .desc("Get information on the aut-num object and its related objects.")
+                            .build()
+            )
+            .addOption(
+                    Option.builder("ras").longOpt("retrieve-as-set")
+                            .hasArg()
+                            .argName("AS-set")
+                            .desc("Get information on the as-set object and its related objects. [to be implemented in the future]")
+                            .build()
+            )
+            .addOption(
+                    Option.builder("rmb").longOpt("retrieve-mnt-by")
+                            .desc("Get information on the as-set object and its related objects. [to be implemented in the future]")
+                            .build()
+            )
+            .addOption(
+                    Option.builder("ro").longOpt("retrieve-organisation")
+                            .desc("Get information on the as-set object and its related objects. [to be implemented in the future]")
+                            .build()
+            )
             .addOption("h", "help", false, "Show help");
 
     private final CommandLine cmd;
@@ -49,6 +73,14 @@ public class CommandLineParser {
 
     public boolean isHelpRequested() {
         return cmd.hasOption("help");
+    }
+
+    public boolean isRetrieveAutNum() {
+        return cmd.hasOption("retrieve-aut-num");
+    }
+
+    public String getAutNum() {
+        return cmd.getOptionValue("retrieve-aut-num").trim();
     }
 
     public static void printHelp() {
