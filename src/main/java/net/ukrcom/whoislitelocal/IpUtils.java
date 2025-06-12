@@ -29,7 +29,8 @@ public class IpUtils {
      * @return
      * @throws java.net.UnknownHostException
      */
-    public static String ipv4ToCidr(String ipAddress, int count) throws UnknownHostException {
+    public static String ipv4ToCidr(String ipAddress, int count) throws
+            UnknownHostException {
         if (count <= 0) {
             throw new IllegalArgumentException("Кількість адрес має бути позитивною");
         }
@@ -52,7 +53,8 @@ public class IpUtils {
      * @return
      * @throws java.net.UnknownHostException
      */
-    public static String ipv6ToCidr(String ipAddress, int prefixLength) throws UnknownHostException {
+    public static String ipv6ToCidr(String ipAddress, int prefixLength) throws
+            UnknownHostException {
         if (prefixLength < 0 || prefixLength > 128) {
             throw new IllegalArgumentException("Невірна довжина префікса для IPv6: " + prefixLength);
         }
