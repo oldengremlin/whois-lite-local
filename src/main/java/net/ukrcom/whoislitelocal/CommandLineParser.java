@@ -59,7 +59,7 @@ public class CommandLineParser {
                     Option.builder("ro").longOpt("retrieve-organisation")
                             .hasArg()
                             .argName("AS-num")
-                            .desc("Get information on the as-set object and its related objects. [to be implemented in the future]")
+                            .desc("Get information on the as-set object and its related objects.")
                             .build()
             )
             .addOption("h", "help", false, "Show help");
