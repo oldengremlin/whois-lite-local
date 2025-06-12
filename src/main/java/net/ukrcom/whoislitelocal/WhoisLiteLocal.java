@@ -32,6 +32,12 @@ public class WhoisLiteLocal {
                 executeGetData();
             } else if (parser.isRetrieveAutNum()) {
                 executeRetrieveAutNum(parser.getAutNum());
+            } else if (parser.isRetrieveAsSet()) {
+                executeRetrieveAsSet(parser.getAsSet());
+            } else if (parser.isRetrieveMntBy()) {
+                executeRetrieveMntBy(parser.getMntBy());
+            } else if (parser.isRetrieveOrganisation()) {
+                executeRetrieveOrganisation(parser.getOrganisation());
             } else {
                 CommandLineParser.printHelp();
                 System.exit(0xfd);
@@ -60,6 +66,18 @@ public class WhoisLiteLocal {
 
     private static void executeRetrieveAutNum(String autNum) {
         new retrieveAutNum(autNum).printAutNum().printOrg();
+    }
+
+    private static void executeRetrieveAsSet(String asSet) {
+        new retrieveAsSet(asSet).printAsSet();
+    }
+
+    private static void executeRetrieveMntBy(String mntBy) {
+        new retrieveMntBy(mntBy).printMntBy();
+    }
+
+    private static void executeRetrieveOrganisation(String autNum) {
+        new retrieveOrganisation(autNum).Load().printOrg();
     }
 
 }

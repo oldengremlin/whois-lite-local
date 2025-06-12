@@ -45,16 +45,20 @@ public class CommandLineParser {
                     Option.builder("ras").longOpt("retrieve-as-set")
                             .hasArg()
                             .argName("AS-set")
-                            .desc("Get information on the as-set object and its related objects. [to be implemented in the future]")
+                            .desc("Get information on the as-set object and its related objects.")
                             .build()
             )
             .addOption(
                     Option.builder("rmb").longOpt("retrieve-mnt-by")
-                            .desc("Get information on the as-set object and its related objects. [to be implemented in the future]")
+                            .hasArg()
+                            .argName("mntnr")
+                            .desc("Get information on the as-set object and its related objects.")
                             .build()
             )
             .addOption(
                     Option.builder("ro").longOpt("retrieve-organisation")
+                            .hasArg()
+                            .argName("AS-num")
                             .desc("Get information on the as-set object and its related objects. [to be implemented in the future]")
                             .build()
             )
@@ -81,6 +85,30 @@ public class CommandLineParser {
 
     public String getAutNum() {
         return cmd.getOptionValue("retrieve-aut-num").trim();
+    }
+
+    public boolean isRetrieveAsSet() {
+        return cmd.hasOption("retrieve-as-set");
+    }
+
+    public String getAsSet() {
+        return cmd.getOptionValue("retrieve-as-set").trim();
+    }
+
+    public boolean isRetrieveMntBy() {
+        return cmd.hasOption("retrieve-mnt-by");
+    }
+
+    public String getMntBy() {
+        return cmd.getOptionValue("retrieve-mnt-by").trim();
+    }
+
+    public boolean isRetrieveOrganisation() {
+        return cmd.hasOption("retrieve-organisation");
+    }
+
+    public String getOrganisation() {
+        return cmd.getOptionValue("retrieve-organisation").trim();
     }
 
     public static void printHelp() {

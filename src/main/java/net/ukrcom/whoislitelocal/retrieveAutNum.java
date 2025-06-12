@@ -30,7 +30,7 @@ public class retrieveAutNum {
 
     protected String autNum;
     protected String autNumBlock;
-    private final Logger logger;
+    protected final Logger logger;
 
     public retrieveAutNum(String autNum) {
         this.autNum = autNum;
@@ -93,7 +93,7 @@ public class retrieveAutNum {
         return retVal.toString();
     }
 
-    private String getAsn(String as) {
+    protected String getAsn(String as) {
         StringBuilder retVal = new StringBuilder();
         String asNum = as.replaceFirst("^[Aa][Ss]", "");
         Integer asn = Integer.valueOf(asNum);
