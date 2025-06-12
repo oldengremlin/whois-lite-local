@@ -49,6 +49,7 @@ public class WhoisLiteLocal {
     }
 
     private static void executeGetData() {
+        long startTime = System.currentTimeMillis();
         try {
             new initializeDatabase().createTables();
             new processFiles().process("urls_extended", new parseExtended());
@@ -61,6 +62,8 @@ public class WhoisLiteLocal {
             Config.getLogger().error("Main process (SQLException)", e);
         } catch (URISyntaxException e) {
             Config.getLogger().error("Main process (URISyntaxException)", e);
+        } finally {
+            Config.getLogger().info("executeGetData completed in {} ms", System.currentTimeMillis() - startTime);
         }
     }
 
