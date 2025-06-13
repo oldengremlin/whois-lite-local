@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.ukrcom.whoislitelocal;
+package net.ukrcom.whoislitelocal.retrieve;
 
 import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
@@ -23,6 +23,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import net.ukrcom.whoislitelocal.Config;
 import org.sqlite.Function;
 
 /**
@@ -46,7 +47,7 @@ public class retrieveMntBy {
             try (PreparedStatement selectStmt = conn.prepareStatement(
                     "SELECT block FROM rpsl WHERE key IN (\"aut-num\", \"as-set\") AND block REGEXP ?")) {
                 String escapedMntBy = this.mntBy.replaceAll("[^a-zA-Z0-9-]", "");
-                selectStmt.setString(1, "(?m)^mnt-by: *" + escapedMntBy);
+                selectStmt.setString(1, "(?mi)^mnt-by: *" + escapedMntBy + "$");
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
                     this.mntByBlock = rs.getString("block");

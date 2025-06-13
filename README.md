@@ -5,8 +5,13 @@
 
 ## Usage
 ```bash
-java -jar WhoisLiteLocal-1.0.0.jar [--get-data]
+java -jar WhoisLiteLocal-1.0.0.jar [options]
 ```
 
-* --get-data, -g: Download and process data from configured URLs (default behavior).
+* --get-data, -gd: Download and process data from configured URLs (default behavior).
+* --retrieve-aut-num, -ran <as-num>: Retrieve information about the aut-num object and related objects.
+* --retrieve-as-set, -ras <as-set>: Retrieve information about the as-set object.
+* --retrieve-mntner, -rm <mntnr>: Get information on the mntner object and its related objects.
+* --retrieve-mnt-by, -rmb <mntnr>: Retrieve objects maintained by the specified maintainer.
+* --retrieve-organisation, -ro <as-num>: Retrieve organisation information for the specified aut-num.
 * --help, -h: Show help message.

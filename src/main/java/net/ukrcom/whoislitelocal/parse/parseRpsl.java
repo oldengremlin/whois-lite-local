@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.ukrcom.whoislitelocal;
+package net.ukrcom.whoislitelocal.parse;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -253,8 +253,8 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
                 String existingShaBlock = rs.getString("shablock");
                 String shaBlock = sha512(this.block.toString());
-                this.pf.logger.info("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
-                this.pf.logger.info("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
+                this.pf.logger.debug("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
+                this.pf.logger.debug("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
                 if (existingShaBlock.equals(shaBlock)) {
                     return;
                 }

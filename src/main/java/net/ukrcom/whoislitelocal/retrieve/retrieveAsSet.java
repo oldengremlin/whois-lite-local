@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.ukrcom.whoislitelocal;
+package net.ukrcom.whoislitelocal.retrieve;
 
 import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
@@ -21,6 +21,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import net.ukrcom.whoislitelocal.Config;
 
 /**
  *

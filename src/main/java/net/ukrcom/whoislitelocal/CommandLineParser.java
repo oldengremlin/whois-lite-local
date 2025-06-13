@@ -49,6 +49,13 @@ public class CommandLineParser {
                             .build()
             )
             .addOption(
+                    Option.builder("rm").longOpt("retrieve-mntner")
+                            .hasArg()
+                            .argName("mntnr")
+                            .desc("Get information on the mntner object and its related objects.")
+                            .build()
+            )
+            .addOption(
                     Option.builder("rmb").longOpt("retrieve-mnt-by")
                             .hasArg()
                             .argName("mntnr")
@@ -100,6 +107,14 @@ public class CommandLineParser {
     }
 
     public String getMntBy() {
+        return cmd.getOptionValue("retrieve-mnt-by").trim();
+    }
+
+    public boolean isRetrieveMntner() {
+        return cmd.hasOption("retrieve-mnt-by");
+    }
+
+    public String getMntner() {
         return cmd.getOptionValue("retrieve-mnt-by").trim();
     }
 

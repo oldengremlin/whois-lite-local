@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.ukrcom.whoislitelocal;
+package net.ukrcom.whoislitelocal.parse;
 
 import inet.ipaddr.AddressStringException;
 import inet.ipaddr.IPAddress;
@@ -26,6 +26,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.Set;
+import net.ukrcom.whoislitelocal.IpUtils;
 
 /**
  *

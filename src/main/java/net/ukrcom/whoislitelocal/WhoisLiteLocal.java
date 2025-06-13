@@ -15,6 +15,16 @@
  */
 package net.ukrcom.whoislitelocal;
 
+import net.ukrcom.whoislitelocal.retrieve.retrieveOrganisation;
+import net.ukrcom.whoislitelocal.retrieve.retrieveMntBy;
+import net.ukrcom.whoislitelocal.retrieve.retrieveAutNum;
+import net.ukrcom.whoislitelocal.retrieve.retrieveAsSet;
+import net.ukrcom.whoislitelocal.retrieve.retrieveMntner;
+import net.ukrcom.whoislitelocal.parse.parseExtended;
+import net.ukrcom.whoislitelocal.parse.parseAsnames;
+import net.ukrcom.whoislitelocal.parse.parseRpsl;
+import net.ukrcom.whoislitelocal.parse.parseGeolocations;
+import net.ukrcom.whoislitelocal.parse.processFiles;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.sql.SQLException;
@@ -36,6 +46,8 @@ public class WhoisLiteLocal {
                 executeRetrieveAsSet(parser.getAsSet());
             } else if (parser.isRetrieveMntBy()) {
                 executeRetrieveMntBy(parser.getMntBy());
+            } else if (parser.isRetrieveMntner()) {
+                executeRetrieveMntner(parser.getMntBy());
             } else if (parser.isRetrieveOrganisation()) {
                 executeRetrieveOrganisation(parser.getOrganisation());
             } else {
@@ -77,6 +89,10 @@ public class WhoisLiteLocal {
 
     private static void executeRetrieveMntBy(String mntBy) {
         new retrieveMntBy(mntBy).printMntBy();
+    }
+
+    private static void executeRetrieveMntner(String mntBy) {
+        new retrieveMntner(mntBy).printMntner();
     }
 
     private static void executeRetrieveOrganisation(String autNum) {

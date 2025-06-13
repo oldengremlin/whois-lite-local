@@ -13,15 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.ukrcom.whoislitelocal;
+package net.ukrcom.whoislitelocal.parse;
 
 import java.math.BigInteger;
 import java.net.UnknownHostException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import static net.ukrcom.whoislitelocal.parseExtended.IP2BigInteger;
-import static net.ukrcom.whoislitelocal.parseExtended.IPBigIntegerWithZero;
+import static net.ukrcom.whoislitelocal.parse.parseExtended.IP2BigInteger;
+import static net.ukrcom.whoislitelocal.parse.parseExtended.IPBigIntegerWithZero;
 
 public class parseGeolocations extends parseAbstract implements parseInterface {
 
