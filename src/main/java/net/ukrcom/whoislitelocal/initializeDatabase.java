@@ -24,7 +24,6 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.logging.Level;
 import org.sqlite.Function;
 
 /**
@@ -103,6 +102,22 @@ public class initializeDatabase {
                         last_modified TEXT NOT NULL,
                         file_size INTEGER NOT NULL
                     )""");
+                stmt.execute("""
+                    CREATE TABLE "rpsl_origin" (
+	                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                	origin TEXT NOT NULL COLLATE NOCASE,
+                        route TEXT NOT NULL,
+                        UNIQUE(origin, route)
+                    )""");
+                stmt.execute("""
+                    CREATE TABLE "rpsl_mntby" (
+	                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                	key TEXT NOT NULL,
+                        value TEXT NOT NULL COLLATE NOCASE,
+                	mntby TEXT NOT NULL COLLATE NOCASE,
+                	UNIQUE(mntby, key, value)
+                    )""");
+
                 try (PreparedStatement checkStmt = connSQLite.prepareStatement(
                         "SELECT name FROM sqlite_master WHERE type='index' AND name=?")) {
                     // Index idx_asn_asn
@@ -176,6 +191,24 @@ public class initializeDatabase {
                         logger.info("Created index idx_rpsl_kv on rpsl table");
                     } else {
                         logger.info("Index idx_rpsl_kv already exists, skipping creation");
+                    }
+                    // Index idx_rpsl_origin
+                    checkStmt.setString(1, "idx_rpsl_origin");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_rpsl_origin' ON 'rpsl_origin' ('origin')");
+                        logger.info("Created index idx_rpsl_origin on rpsl table");
+                    } else {
+                        logger.info("Index idx_rpsl_origin already exists, skipping creation");
+                    }
+                    // Index idx_rpsl_mntby
+                    checkStmt.setString(1, "idx_rpsl_mntby");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_rpsl_mntby' ON 'rpsl_mntby' ('mntby')");
+                        logger.info("Created index idx_rpsl_mntby on rpsl table");
+                    } else {
+                        logger.info("Index idx_rpsl_mntby already exists, skipping creation");
                     }
                 }
                 connSQLite.commit();

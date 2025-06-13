@@ -25,8 +25,14 @@ import java.nio.file.Files;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import static net.ukrcom.whoislitelocal.initializeDatabase.sha512;
 import org.apache.commons.compress.compressors.CompressorException;
 
@@ -62,7 +68,7 @@ import org.apache.commons.compress.compressors.CompressorException;
                 notify:
                 org:
                 organisation:
-                origin:
+                extractedSubKeyValue:
                 peering-set:
                 person:
                 phone:
@@ -71,9 +77,9 @@ import org.apache.commons.compress.compressors.CompressorException;
                 poetic-form:
                 remarks:
                 role:
-                route-set:
+                extractedKeyValue-set:
                 route6:
-                route:
+                extractedKeyValue:
                 rtr-set:
                 source:
                 tech-c:        
@@ -82,14 +88,27 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
     private processFiles pf;
     private int batchCount = 0;
+    private int batchCountRpslOrigin = 0;
+    private int batchCountRpslMntBy = 0;
     private boolean needInitializeTempTables = true;
     private boolean beginBlock = false;
     private boolean ignoreNext = false;
     private int linesOfBlock = 0;
     private StringBuilder block;
     private String key, value;
-    PreparedStatement storeSelectStmt, storeUpdateStmt, storeInsertStmt, storeTempStmt;
+    private PreparedStatement storeSelectStmt, storeUpdateStmt, storeInsertStmt;
+    private PreparedStatement storeInsertRpslOrigin, storeInsertRpslMntBy;
+    private PreparedStatement storeTempStmt;
 
+    private final Set<String> allowedKeys = Set.of(
+            "aut-num",
+            "as-set",
+            "organisation",
+            "mntner",
+            "role",
+            "route",
+            "route6"
+    );
     private final Map<String, String> blockCache = new HashMap<>();
     private final int BATCH_SIZE = 1000;
 
@@ -124,12 +143,18 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                          "UPDATE rpsl SET block=? WHERE key=? AND value=?");
                  PreparedStatement insertStmt = this.pf.connection.prepareStatement(
                          "INSERT OR IGNORE INTO rpsl (key, value, block) VALUES (?, ?, ?)");
+                 PreparedStatement insertRpslOrigin = this.pf.connection.prepareStatement(
+                         "INSERT OR REPLACE INTO rpsl_origin (origin, route) VALUES (?, ?)");
+                 PreparedStatement insertRpslMntBy = this.pf.connection.prepareStatement(
+                         "INSERT OR REPLACE INTO rpsl_mntby (mntby, key, value) VALUES (?, ?, ?)");
                  PreparedStatement tempStmt = this.pf.connection.prepareStatement(
                          "INSERT OR IGNORE INTO temp_rpsl (key, value) VALUES (?, ?)")) {
 
                 this.storeSelectStmt = selectStmt;
                 this.storeUpdateStmt = updateStmt;
                 this.storeInsertStmt = insertStmt;
+                this.storeInsertRpslOrigin = insertRpslOrigin;
+                this.storeInsertRpslMntBy = insertRpslMntBy;
                 this.storeTempStmt = tempStmt;
 
                 while ((this.line = reader.readLine()) != null) {
@@ -142,6 +167,14 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 if (this.linesOfBlock > 0 && this.block != null && !this.block.isEmpty()) {
                     this.batchCount = this.BATCH_SIZE - 1;
                     saveBlock();
+                }
+
+                if (this.batchCountRpslOrigin > 0) {
+                    this.storeInsertRpslOrigin.executeBatch();
+                }
+
+                if (this.batchCountRpslMntBy > 0) {
+                    this.storeInsertRpslMntBy.executeBatch();
                 }
 
                 runIncrementalVacuumSmart(pf);
@@ -241,8 +274,20 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     private void saveBlock() {
 
         this.beginBlock = false;
+
         if (this.key == null || this.value == null || this.block == null || this.block.isEmpty()) {
             return;
+        }
+
+        if (!allowedKeys.contains(this.key)) {
+            return;
+        }
+
+        switch (this.key) {
+            case "route", "route6" ->
+                storeRpslOrigin();
+            case "role", "aut-num", "as-set" ->
+                storeRpslMntBy();
         }
 
         try {
@@ -276,7 +321,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             this.storeTempStmt.setString(2, this.value);
             this.storeTempStmt.addBatch();
 
-            if (++this.batchCount >= BATCH_SIZE) {
+            if (++this.batchCount >= this.BATCH_SIZE) {
                 this.storeInsertStmt.executeBatch();
                 this.storeTempStmt.executeBatch();
                 this.pf.logger.info("Executed batch of {} RPSL records", this.batchCount);
@@ -312,6 +357,82 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 }
 
             }
+        }
+    }
+
+    private Map.Entry<String, List<String>> blockExtractor(String subKey) {
+        String extractedKeyValue = null;
+        List<String> extractedSubKeyValues = new ArrayList<>();
+
+        for (String blockLine : this.block.toString().lines().toList()) {
+            blockLine = blockLine.trim();
+            if (blockLine.startsWith(this.key + ":")) {
+                extractedKeyValue = blockLine.split("\\s+", 2)[1];
+            } else if (blockLine.startsWith(subKey + ":")) {
+                String extractedValue = blockLine.split("\\s+", 2)[1];
+                extractedSubKeyValues.add(extractedValue);
+            }
+        }
+
+        return new AbstractMap.SimpleEntry<>(extractedKeyValue, extractedSubKeyValues);
+    }
+
+    private void storeRpslOrigin() {
+        Map.Entry<String, List<String>> result = blockExtractor("origin");
+        String rpsl_originRoute = result.getKey();
+        List<String> origins = result.getValue();
+        saveRpslOrigin(rpsl_originRoute, origins);
+    }
+
+    private void storeRpslMntBy() {
+        Map.Entry<String, List<String>> result = blockExtractor("mnt-by");
+        String rpsl_mntbyKey = result.getKey();
+        List<String> rpsl_mntbyValues = result.getValue();
+        saveRpslMntBy(rpsl_mntbyKey, rpsl_mntbyValues);
+    }
+
+    private void saveRpslOrigin(String rpsl_originRoute, List<String> origins) {
+        try {
+            for (String origin : origins) {
+                this.storeInsertRpslOrigin.setString(1, origins.get(0));
+                this.storeInsertRpslOrigin.setString(2, rpsl_originRoute);
+                this.storeInsertRpslOrigin.addBatch();
+
+                this.pf.logger.debug("[{}] Store RPSL origin for {} → [{} : {}]",
+                        this.batchCountRpslOrigin, this.key, rpsl_originRoute, origin);
+
+                if (++this.batchCountRpslOrigin >= this.BATCH_SIZE) {
+                    this.storeInsertRpslOrigin.executeBatch();
+                    this.batchCountRpslOrigin = 0;
+                }
+
+            }
+        } catch (SQLException ex) {
+            this.pf.logger.warn("Can't store RPSL origin for {} → [{} : {}]",
+                    this.batchCountRpslOrigin, this.key, rpsl_originRoute, origins, ex);
+        }
+    }
+
+    private void saveRpslMntBy(String rpsl_mntbyKey, List<String> rpsl_mntbyValues) {
+        try {
+            for (String mntbyValue : rpsl_mntbyValues) {
+                this.storeInsertRpslMntBy.setString(1, this.key);
+                this.storeInsertRpslMntBy.setString(2, rpsl_mntbyKey);
+                this.storeInsertRpslMntBy.setString(3, mntbyValue);
+                this.storeInsertRpslMntBy.addBatch();
+
+                this.pf.logger.debug("[{}] Store RPSL mnt-by for {} → [{} : {}]",
+                        this.batchCountRpslMntBy, this.key, rpsl_mntbyKey, mntbyValue);
+
+                if (++this.batchCountRpslMntBy >= this.BATCH_SIZE) {
+                    this.storeInsertRpslMntBy.executeBatch();
+                    this.batchCountRpslMntBy = 0;
+                }
+
+            }
+        } catch (SQLException ex) {
+            this.pf.logger.warn("Can't store RPSL mnt-by for {} → [{} : {}]",
+                    this.batchCountRpslMntBy, this.key, rpsl_mntbyKey, rpsl_mntbyValues);
         }
     }
 

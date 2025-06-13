@@ -45,7 +45,7 @@ public class retrieveAsSet {
             selectStmt.setString(1, "as-set");
             selectStmt.setString(2, this.asSet);
             ResultSet rs = selectStmt.executeQuery();
-            if (rs.next()) {
+            while (rs.next()) {
                 this.asSetBlock = rs.getString("block");
                 System.out.println(this.asSetBlock);
             }

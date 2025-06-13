@@ -40,7 +40,7 @@ public class retrieveOrganisation extends retrieveAutNum {
             selectStmt.setString(1, "aut-num");
             selectStmt.setString(2, this.autNum);
             ResultSet rs = selectStmt.executeQuery();
-            if (rs.next()) {
+            while (rs.next()) {
                 this.autNumBlock = rs.getString("block");
                 System.out.println(getAsn(this.autNum));
             }

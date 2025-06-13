@@ -69,13 +69,28 @@ public class CommandLineParser {
                             .desc("Get information on the as-set object and its related objects.")
                             .build()
             )
+            .addOption(
+                    Option.builder("rro").longOpt("retrieve-route-origin")
+                            .hasArg()
+                            .argName("AS-num")
+                            .desc("Get information on the route and route6 object.")
+                            .build()
+            )
             .addOption("h", "help", false, "Show help");
 
     private final CommandLine cmd;
 
     public CommandLineParser(String[] args) throws ParseException {
+        Config.getLogger().debug("Received command-line arguments: {}", String.join(" ", args));
         DefaultParser parser = new DefaultParser();
         cmd = parser.parse(options, args);
+    }
+
+    private String checkValue(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException("Value for option cannot be empty");
+        }
+        return value.trim();
     }
 
     public boolean isGetData() {
@@ -99,7 +114,7 @@ public class CommandLineParser {
     }
 
     public String getAsSet() {
-        return cmd.getOptionValue("retrieve-as-set").trim();
+        return checkValue(cmd.getOptionValue("retrieve-as-set"));
     }
 
     public boolean isRetrieveMntBy() {
@@ -107,15 +122,15 @@ public class CommandLineParser {
     }
 
     public String getMntBy() {
-        return cmd.getOptionValue("retrieve-mnt-by").trim();
+        return checkValue(cmd.getOptionValue("retrieve-mnt-by"));
     }
 
     public boolean isRetrieveMntner() {
-        return cmd.hasOption("retrieve-mnt-by");
+        return cmd.hasOption("retrieve-mntner");
     }
 
     public String getMntner() {
-        return cmd.getOptionValue("retrieve-mnt-by").trim();
+        return checkValue(cmd.getOptionValue("retrieve-mntner"));
     }
 
     public boolean isRetrieveOrganisation() {
@@ -123,7 +138,15 @@ public class CommandLineParser {
     }
 
     public String getOrganisation() {
-        return cmd.getOptionValue("retrieve-organisation").trim();
+        return checkValue(cmd.getOptionValue("retrieve-organisation"));
+    }
+
+    public boolean isRouteOrigin() {
+        return cmd.hasOption("retrieve-route-origin");
+    }
+
+    public String getRouteOrigin() {
+        return checkValue(cmd.getOptionValue("retrieve-route-origin"));
     }
 
     public static void printHelp() {

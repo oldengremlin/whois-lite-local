@@ -30,47 +30,28 @@ import org.sqlite.Function;
  *
  * @author olden
  */
-public class retrieveMntner {
+public class retrieveRouteOrigin {
 
-    protected String mntner;
-    protected String mntnerBlock;
+    protected String mntBy;
+    protected String mntByBlock;
     private final Logger logger;
 
-    public retrieveMntner(String mntBy) {
-        this.mntner = mntBy;
+    public retrieveRouteOrigin(String mntBy) {
+        this.mntBy = mntBy;
         this.logger = Config.getLogger();
     }
 
-    public retrieveMntner printMntner() {
-        try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
-            try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT block FROM rpsl WHERE key = \"mntner\" AND value = ?")) {
-                selectStmt.setString(1, this.mntner);
-                ResultSet rs = selectStmt.executeQuery();
-                while (rs.next()) {
-                    this.mntnerBlock = rs.getString("block");
-                    System.out.println(this.mntnerBlock);
-                    System.out.println();
-                }
-            }
-        } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum", ex);
-        }
-        return this;
-    }
-
-    public retrieveMntner printMntnerRole() {
+    public retrieveRouteOrigin printRouteOrigin() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             registerRegexpFunction(conn);
             try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT block FROM rpsl WHERE key=? AND block REGEXP ?")) {
-                String escapedMntBy = this.mntner.replaceAll("[^a-zA-Z0-9-]", "");
-                selectStmt.setString(1, "role");
-                selectStmt.setString(2, "(?mi)^mnt-by: *" + escapedMntBy + "$");
+                    "SELECT block FROM rpsl WHERE key IN (\"route\", \"route6\") AND block REGEXP ?")) {
+                String escapedMntBy = this.mntBy.replaceAll("[^a-zA-Z0-9-]", "");
+                selectStmt.setString(1, "(?mi)^origin: *" + escapedMntBy + "$");
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
-                    this.mntnerBlock = rs.getString("block");
-                    System.out.println(this.mntnerBlock);
+                    this.mntByBlock = rs.getString("block");
+                    System.out.println(this.mntByBlock);
                     System.out.println();
                 }
             }

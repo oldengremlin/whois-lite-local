@@ -46,7 +46,7 @@ public class retrieveAutNum {
             selectStmt.setString(1, "aut-num");
             selectStmt.setString(2, this.autNum);
             ResultSet rs = selectStmt.executeQuery();
-            if (rs.next()) {
+            while (rs.next()) {
                 this.autNumBlock = rs.getString("block");
                 System.out.println(this.autNumBlock);
                 System.out.println(getAsn(this.autNum));
@@ -104,7 +104,7 @@ public class retrieveAutNum {
                      "SELECT country, name FROM asn WHERE asn=?");) {
             selectStmt.setInt(1, asn);
             ResultSet rs = selectStmt.executeQuery();
-            if (rs.next()) {
+            while (rs.next()) {
                 retVal.append("as-num:         ");
                 retVal.append(as.toUpperCase());
                 retVal.append("\ncountry:        ");
