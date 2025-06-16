@@ -15,4 +15,5 @@ java -jar WhoisLiteLocal-1.0.0.jar [options]
 * --retrieve-mnt-by, -rmb <mntnr>: Retrieve objects maintained by the specified maintainer.
 * --retrieve-organisation, -ro <as-num>: Retrieve organisation information for the specified aut-num.
 * --retrieve-route-origin, -rro <AS-num>: Retrieve information about route and route6 objects with the specified origin.
+* --retrieve-network-origin, -rno <net-num>: Retrieve information about route and route6 objects for the specified network.
 * --help, -h: Show help message.

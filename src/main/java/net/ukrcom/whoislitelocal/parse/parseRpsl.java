@@ -31,8 +31,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import static net.ukrcom.whoislitelocal.initializeDatabase.sha512;
 import org.apache.commons.compress.compressors.CompressorException;
 
@@ -98,6 +96,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     private String key, value;
     private PreparedStatement storeSelectStmt, storeUpdateStmt, storeInsertStmt;
     private PreparedStatement storeInsertRpslOrigin, storeInsertRpslMntBy;
+    private PreparedStatement storeInsertTempRpslOrigin, storeInsertTempRpslMntBy;
     private PreparedStatement storeTempStmt;
 
     private final Set<String> allowedKeys = Set.of(
@@ -130,6 +129,21 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                         value TEXT NOT NULL,
                         UNIQUE(key, value)
                     )""");
+
+                this.pf.connection.createStatement().execute("""
+                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl_origin (
+                	origin TEXT NOT NULL COLLATE NOCASE,
+                        route TEXT NOT NULL,
+                        UNIQUE(origin, route)
+                    )""");
+                this.pf.connection.createStatement().execute("""
+                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl_mntby (
+                	key TEXT NOT NULL,
+                        value TEXT NOT NULL COLLATE NOCASE,
+                	mntby TEXT NOT NULL COLLATE NOCASE,
+                	UNIQUE(mntby, key, value)
+                    )""");
+
                 this.needInitializeTempTables = false;
             } else {
                 // Clear temporary tables for this file
@@ -147,6 +161,10 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                          "INSERT OR REPLACE INTO rpsl_origin (origin, route) VALUES (?, ?)");
                  PreparedStatement insertRpslMntBy = this.pf.connection.prepareStatement(
                          "INSERT OR REPLACE INTO rpsl_mntby (mntby, key, value) VALUES (?, ?, ?)");
+                 PreparedStatement insertTempRpslOrigin = this.pf.connection.prepareStatement(
+                         "INSERT OR REPLACE INTO temp_rpsl_origin (origin, route) VALUES (?, ?)");
+                 PreparedStatement insertTempRpslMntBy = this.pf.connection.prepareStatement(
+                         "INSERT OR REPLACE INTO temp_rpsl_mntby (mntby, key, value) VALUES (?, ?, ?)");
                  PreparedStatement tempStmt = this.pf.connection.prepareStatement(
                          "INSERT OR IGNORE INTO temp_rpsl (key, value) VALUES (?, ?)")) {
 
@@ -155,6 +173,8 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.storeInsertStmt = insertStmt;
                 this.storeInsertRpslOrigin = insertRpslOrigin;
                 this.storeInsertRpslMntBy = insertRpslMntBy;
+                this.storeInsertTempRpslOrigin = insertTempRpslOrigin;
+                this.storeInsertTempRpslMntBy = insertTempRpslMntBy;
                 this.storeTempStmt = tempStmt;
 
                 while ((this.line = reader.readLine()) != null) {
@@ -171,10 +191,12 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
                 if (this.batchCountRpslOrigin > 0) {
                     this.storeInsertRpslOrigin.executeBatch();
+                    this.storeInsertTempRpslOrigin.executeBatch();
                 }
 
                 if (this.batchCountRpslMntBy > 0) {
                     this.storeInsertRpslMntBy.executeBatch();
+                    this.storeInsertTempRpslMntBy.executeBatch();
                 }
 
                 runIncrementalVacuumSmart(pf);
@@ -394,15 +416,20 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     private void saveRpslOrigin(String rpsl_originRoute, List<String> origins) {
         try {
             for (String origin : origins) {
-                this.storeInsertRpslOrigin.setString(1, origins.get(0));
+                this.storeInsertRpslOrigin.setString(1, origin);
                 this.storeInsertRpslOrigin.setString(2, rpsl_originRoute);
                 this.storeInsertRpslOrigin.addBatch();
+
+                this.storeInsertTempRpslOrigin.setString(1, origin);
+                this.storeInsertTempRpslOrigin.setString(2, rpsl_originRoute);
+                this.storeInsertTempRpslOrigin.addBatch();
 
                 this.pf.logger.debug("[{}] Store RPSL origin for {} → [{} : {}]",
                         this.batchCountRpslOrigin, this.key, rpsl_originRoute, origin);
 
                 if (++this.batchCountRpslOrigin >= this.BATCH_SIZE) {
                     this.storeInsertRpslOrigin.executeBatch();
+                    this.storeInsertTempRpslOrigin.executeBatch();
                     this.batchCountRpslOrigin = 0;
                 }
 
@@ -421,11 +448,17 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.storeInsertRpslMntBy.setString(3, mntbyValue);
                 this.storeInsertRpslMntBy.addBatch();
 
+                this.storeInsertTempRpslMntBy.setString(1, this.key);
+                this.storeInsertTempRpslMntBy.setString(2, rpsl_mntbyKey);
+                this.storeInsertTempRpslMntBy.setString(3, mntbyValue);
+                this.storeInsertTempRpslMntBy.addBatch();
+
                 this.pf.logger.debug("[{}] Store RPSL mnt-by for {} → [{} : {}]",
                         this.batchCountRpslMntBy, this.key, rpsl_mntbyKey, mntbyValue);
 
                 if (++this.batchCountRpslMntBy >= this.BATCH_SIZE) {
                     this.storeInsertRpslMntBy.executeBatch();
+                    this.storeInsertTempRpslMntBy.executeBatch();
                     this.batchCountRpslMntBy = 0;
                 }
 
@@ -433,6 +466,36 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         } catch (SQLException ex) {
             this.pf.logger.warn("Can't store RPSL mnt-by for {} → [{} : {}]",
                     this.batchCountRpslMntBy, this.key, rpsl_mntbyKey, rpsl_mntbyValues);
+        }
+    }
+
+    private void cleanupRpslOriginAndMntBy() throws SQLException {
+        try (PreparedStatement deleteRpslOrigin = this.pf.connection.prepareStatement("DELETE FROM rpsl_origin "
+                + "WHERE NOT EXISTS ( "
+                + "SELECT 1 FROM temp_rpsl_origin "
+                + "WHERE temp_rpsl_origin.origin = rpsl_origin.origin "
+                + "  AND temp_rpsl_origin.route = rpsl_origin.route "
+                + ")");
+             PreparedStatement deleteRpslMntBy = this.pf.connection.prepareStatement("DELETE FROM rpsl_mntby "
+                     + "WHERE NOT EXISTS ( "
+                     + "SELECT 1 FROM temp_rpsl_mntby "
+                     + "WHERE temp_rpsl_mntby.mntby = rpsl_mntby.mntby "
+                     + "  AND temp_rpsl_mntby.key = rpsl_mntby.key "
+                     + "  AND temp_rpsl_mntby.value = rpsl_mntby.value"
+                     + ")")) {
+
+            int deleted;
+
+            deleted = deleteRpslOrigin.executeUpdate();
+            if (deleted > 0) {
+                this.pf.logger.info("Deleted {} outdated rpsl_origin", deleted);
+            }
+
+            deleted = deleteRpslMntBy.executeUpdate();
+            if (deleted > 0) {
+                this.pf.logger.info("Deleted {} outdated rpsl_mntby", deleted);
+            }
+
         }
     }
 

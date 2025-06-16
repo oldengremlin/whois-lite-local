@@ -202,7 +202,7 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_rpsl_origin already exists, skipping creation");
                     }
-*/
+                     */
                     // Index idx_rpsl_mntby
 /*
                     checkStmt.setString(1, "idx_rpsl_mntby");
@@ -213,7 +213,7 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_rpsl_mntby already exists, skipping creation");
                     }
-*/
+                     */
                 }
                 connSQLite.commit();
                 logger.info("Database initialized");
