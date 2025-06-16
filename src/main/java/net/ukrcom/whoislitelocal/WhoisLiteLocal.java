@@ -44,6 +44,8 @@ public class WhoisLiteLocal {
                 executeRetrieveOrganisation(parser.getOrganisation());
             } else if (parser.isRouteOrigin()) {
                 executeRouteOrigin(parser.getRouteOrigin());
+            } else if (parser.isNetworkOrigin()) {
+                executeNetworkOrigin(parser.getNetworkOrigin());
             } else {
                 CommandLineParser.printHelp();
                 System.exit(0xfd);
@@ -95,6 +97,10 @@ public class WhoisLiteLocal {
 
     private static void executeRouteOrigin(String autNum) {
         new retrieveRouteOrigin(autNum).printRouteOrigin();
+    }
+
+    private static void executeNetworkOrigin(String netNum) {
+        new retrieveNetworkOrigin(netNum).printNetworkOrigin();
     }
 
 }

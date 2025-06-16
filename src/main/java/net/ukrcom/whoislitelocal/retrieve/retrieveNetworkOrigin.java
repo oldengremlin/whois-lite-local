@@ -21,52 +21,60 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import net.ukrcom.whoislitelocal.Config;
-import org.sqlite.Function;
 
 /**
  *
  * @author olden
  */
-public class retrieveMntBy {
+public class retrieveNetworkOrigin {
 
-    protected String mntBy;
-    protected String mntByKey;
-    protected String mntByBlock;
+    protected String network;
+    protected String origin;
+    protected String originRoute;
+    protected String originBlock;
     private final Logger logger;
 
-    public retrieveMntBy(String mntBy) {
-        this.mntBy = mntBy;
+    public retrieveNetworkOrigin(String network) {
+        this.network = network;
         this.logger = Config.getLogger();
     }
 
-    public retrieveMntBy printMntBy() {
+    public retrieveNetworkOrigin printNetworkOrigin() {
+
+        this.originBlock = getRouteNetworkBlock();
+        System.out.println(this.originBlock);
+
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT key FROM rpsl_mntby WHERE mntby IN (\"aut-num\", \"as-set\") AND value = ?")) {
-                selectStmt.setString(1, this.mntBy);
+                    "SELECT origin FROM rpsl_origin WHERE route=? ORDER BY origin")) {
+                selectStmt.setString(1, this.network);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
-                    this.mntByKey = rs.getString("key");
-                    this.mntByBlock = getMntByBlock();
-                    System.out.println(this.mntByBlock);
+                    this.origin = rs.getString("origin");
+
+                    System.out.println(this.network.contains(":")
+                            ? "route6:"
+                            : "route: "
+                            + "         "
+                            + this.network);
+                    System.out.println("origin:         " + this.origin);
                     System.out.println();
+                    new retrieveAutNum(this.origin).printAutNum();
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to print MntBy", ex);
+            this.logger.error("Failed to print RouteOrigin", ex);
         }
         return this;
     }
 
-    private String getMntByBlock() {
+    private String getRouteNetworkBlock() {
         StringBuilder retVal = new StringBuilder();
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT block FROM rpsl WHERE key IN (\"aut-num\", \"as-set\") AND value=?")) {
-                selectStmt.setString(1, this.mntByKey);
+                    "SELECT block FROM rpsl WHERE key IN (\"route\", \"route6\") AND value=?")) {
+                selectStmt.setString(1, this.network);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
                     retVal.append(rs.getString("block"));
@@ -74,7 +82,7 @@ public class retrieveMntBy {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve MntBy", ex);
+            this.logger.error("Failed to retrieve NetworkOrigin", ex);
         }
         return retVal.toString();
     }

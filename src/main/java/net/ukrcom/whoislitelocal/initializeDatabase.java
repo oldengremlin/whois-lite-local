@@ -103,14 +103,14 @@ public class initializeDatabase {
                         file_size INTEGER NOT NULL
                     )""");
                 stmt.execute("""
-                    CREATE TABLE "rpsl_origin" (
+                    CREATE TABLE IF NOT EXISTS "rpsl_origin" (
 	                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 	origin TEXT NOT NULL COLLATE NOCASE,
                         route TEXT NOT NULL,
                         UNIQUE(origin, route)
                     )""");
                 stmt.execute("""
-                    CREATE TABLE "rpsl_mntby" (
+                    CREATE TABLE IF NOT EXISTS "rpsl_mntby" (
 	                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 	key TEXT NOT NULL,
                         value TEXT NOT NULL COLLATE NOCASE,
@@ -193,6 +193,7 @@ public class initializeDatabase {
                         logger.info("Index idx_rpsl_kv already exists, skipping creation");
                     }
                     // Index idx_rpsl_origin
+/*
                     checkStmt.setString(1, "idx_rpsl_origin");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
@@ -201,7 +202,9 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_rpsl_origin already exists, skipping creation");
                     }
+*/
                     // Index idx_rpsl_mntby
+/*
                     checkStmt.setString(1, "idx_rpsl_mntby");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
@@ -210,6 +213,7 @@ public class initializeDatabase {
                     } else {
                         logger.info("Index idx_rpsl_mntby already exists, skipping creation");
                     }
+*/
                 }
                 connSQLite.commit();
                 logger.info("Database initialized");

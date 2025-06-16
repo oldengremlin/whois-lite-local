@@ -59,7 +59,7 @@ public class CommandLineParser {
                     Option.builder("rmb").longOpt("retrieve-mnt-by")
                             .hasArg()
                             .argName("mntnr")
-                            .desc("Get information on the as-set object and its related objects.")
+                            .desc("Get information on the aut-num and as-set objects and its related objects.")
                             .build()
             )
             .addOption(
@@ -73,6 +73,13 @@ public class CommandLineParser {
                     Option.builder("rro").longOpt("retrieve-route-origin")
                             .hasArg()
                             .argName("AS-num")
+                            .desc("Get information on the route and route6 object.")
+                            .build()
+            )
+            .addOption(
+                    Option.builder("rno").longOpt("retrieve-network-origin")
+                            .hasArg()
+                            .argName("Net-num")
                             .desc("Get information on the route and route6 object.")
                             .build()
             )
@@ -147,6 +154,14 @@ public class CommandLineParser {
 
     public String getRouteOrigin() {
         return checkValue(cmd.getOptionValue("retrieve-route-origin"));
+    }
+
+    public boolean isNetworkOrigin() {
+        return cmd.hasOption("retrieve-network-origin");
+    }
+
+    public String getNetworkOrigin() {
+        return checkValue(cmd.getOptionValue("retrieve-network-origin"));
     }
 
     public static void printHelp() {

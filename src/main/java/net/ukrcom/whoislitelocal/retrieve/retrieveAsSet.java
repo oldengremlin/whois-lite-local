@@ -51,7 +51,7 @@ public class retrieveAsSet {
             }
 
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum", ex);
+            this.logger.error("Failed to retrieve AsSet", ex);
         }
         return this;
     }

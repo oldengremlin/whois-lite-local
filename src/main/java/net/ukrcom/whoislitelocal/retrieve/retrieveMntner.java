@@ -33,6 +33,7 @@ import org.sqlite.Function;
 public class retrieveMntner {
 
     protected String mntner;
+    protected String mntnerRoleKey;
     protected String mntnerBlock;
     private final Logger logger;
 
@@ -61,42 +62,41 @@ public class retrieveMntner {
 
     public retrieveMntner printMntnerRole() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
-            registerRegexpFunction(conn);
             try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT block FROM rpsl WHERE key=? AND block REGEXP ?")) {
-                String escapedMntBy = this.mntner.replaceAll("[^a-zA-Z0-9-]", "");
+                    "SELECT key FROM rpsl_mntby WHERE mntby=? AND value=?")) {
                 selectStmt.setString(1, "role");
-                selectStmt.setString(2, "(?mi)^mnt-by: *" + escapedMntBy + "$");
+                selectStmt.setString(2, this.mntner);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
-                    this.mntnerBlock = rs.getString("block");
+                    this.mntnerRoleKey = rs.getString("key");
+                    this.mntnerBlock = getMntnerRoleBlock();
                     System.out.println(this.mntnerBlock);
                     System.out.println();
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum", ex);
+            this.logger.error("Failed to print MntnerRole", ex);
         }
         return this;
     }
 
-    public static void registerRegexpFunction(Connection conn) throws
-            SQLException {
-        Function.create(conn, "regexp", new Function() {
-            @Override
-            protected void xFunc() throws SQLException {
-                if (args() != 2) {
-                    throw new SQLException("regexp(pattern, string) requires 2 arguments");
-                }
-                String pattern = value_text(0);
-                String text = value_text(1);
-                try {
-                    result(Pattern.compile(pattern).matcher(text).find() ? 1 : 0);
-                } catch (PatternSyntaxException e) {
-                    throw new SQLException("Invalid regular expression: " + pattern);
+    private String getMntnerRoleBlock() {
+        StringBuilder retVal = new StringBuilder();
+        try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
+            try (PreparedStatement selectStmt = conn.prepareStatement(
+                    "SELECT block FROM rpsl WHERE key=? AND value=?")) {
+                selectStmt.setString(1, "role");
+                selectStmt.setString(2, this.mntnerRoleKey);
+                ResultSet rs = selectStmt.executeQuery();
+                while (rs.next()) {
+                    retVal.append(rs.getString("block"));
+                    retVal.append("\n");
                 }
             }
-        });
+        } catch (SQLException ex) {
+            this.logger.error("Failed to retrieve MntnerRole", ex);
+        }
+        return retVal.toString();
     }
 
 }

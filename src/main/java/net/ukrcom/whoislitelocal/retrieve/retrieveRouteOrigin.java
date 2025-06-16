@@ -32,52 +32,50 @@ import org.sqlite.Function;
  */
 public class retrieveRouteOrigin {
 
-    protected String mntBy;
-    protected String mntByBlock;
+    protected String origin;
+    protected String originRoute;
+    protected String originBlock;
     private final Logger logger;
 
-    public retrieveRouteOrigin(String mntBy) {
-        this.mntBy = mntBy;
+    public retrieveRouteOrigin(String origin) {
+        this.origin = origin;
         this.logger = Config.getLogger();
     }
 
     public retrieveRouteOrigin printRouteOrigin() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
-            registerRegexpFunction(conn);
             try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT block FROM rpsl WHERE key IN (\"route\", \"route6\") AND block REGEXP ?")) {
-                String escapedMntBy = this.mntBy.replaceAll("[^a-zA-Z0-9-]", "");
-                selectStmt.setString(1, "(?mi)^origin: *" + escapedMntBy + "$");
+                    "SELECT route FROM rpsl_origin WHERE origin=? ORDER BY route")) {
+                selectStmt.setString(1, this.origin);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
-                    this.mntByBlock = rs.getString("block");
-                    System.out.println(this.mntByBlock);
-                    System.out.println();
+                    this.originRoute = rs.getString("route");
+                    this.originBlock = getRouteOriginBlock();
+                    System.out.println(this.originBlock);
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum", ex);
+            this.logger.error("Failed to print RouteOrigin", ex);
         }
         return this;
     }
 
-    public static void registerRegexpFunction(Connection conn) throws
-            SQLException {
-        Function.create(conn, "regexp", new Function() {
-            @Override
-            protected void xFunc() throws SQLException {
-                if (args() != 2) {
-                    throw new SQLException("regexp(pattern, string) requires 2 arguments");
-                }
-                String pattern = value_text(0);
-                String text = value_text(1);
-                try {
-                    result(Pattern.compile(pattern).matcher(text).find() ? 1 : 0);
-                } catch (PatternSyntaxException e) {
-                    throw new SQLException("Invalid regular expression: " + pattern);
+    private String getRouteOriginBlock() {
+        StringBuilder retVal = new StringBuilder();
+        try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
+            try (PreparedStatement selectStmt = conn.prepareStatement(
+                    "SELECT block FROM rpsl WHERE key IN (\"route\", \"route6\") AND value=?")) {
+                selectStmt.setString(1, this.originRoute);
+                ResultSet rs = selectStmt.executeQuery();
+                while (rs.next()) {
+                    retVal.append(rs.getString("block"));
+                    retVal.append("\n");
                 }
             }
-        });
+        } catch (SQLException ex) {
+            this.logger.error("Failed to retrieve RouteOrigin", ex);
+        }
+        return retVal.toString();
     }
 
 }

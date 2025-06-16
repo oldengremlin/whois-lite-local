@@ -46,7 +46,7 @@ public class retrieveOrganisation extends retrieveAutNum {
             }
 
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum", ex);
+            this.logger.error("Failed to retrieve AutNum for Organisation", ex);
         }
         return this;
     }
