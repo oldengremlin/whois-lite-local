@@ -48,7 +48,7 @@ public class retrieveNetworkOrigin {
     }
 
     public retrieveNetworkOrigin printNetworkOrigin() {
-
+        /*
         this.originBlock = getRouteNetworkBlock();
         System.out.println(this.originBlock);
 
@@ -78,7 +78,7 @@ public class retrieveNetworkOrigin {
         if (networkFound) {
             return this;
         }
-
+         */
         try {
             IPAddress ipv4Address = new IPAddressString(this.network).toAddress();
             String stringAddress = IPBigIntegerWithZero(IP2BigInteger(ipv4Address.getLower().toString()).toString());
