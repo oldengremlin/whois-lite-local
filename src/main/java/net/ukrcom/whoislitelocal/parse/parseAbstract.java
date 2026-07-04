@@ -36,7 +36,7 @@ import org.apache.commons.compress.compressors.CompressorStreamFactory;
 public class parseAbstract implements parseInterface {
 
     protected String line;
-    protected int MAX_FREE_LIST_COUNT = 100;
+    protected double VACUUM_FRAGMENTATION_THRESHOLD = 0.25;
 
     @Override
     public void parse(processFiles pf) {
@@ -95,31 +95,39 @@ public class parseAbstract implements parseInterface {
     }
 
     protected void runIncrementalVacuumSmart(processFiles pf) {
-        try (PreparedStatement stmt = pf.connection.prepareStatement("PRAGMA freelist_count");
-             ResultSet rs = stmt.executeQuery()) {
+        try {
+            int pageCount;
+            int freelistCount;
 
-            if (rs.next()) {
-                int freelistCount = rs.getInt(1);
+            try (PreparedStatement stmt = pf.connection.prepareStatement("PRAGMA page_count");
+                 ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) return;
+                pageCount = rs.getInt(1);
+            }
 
-                if (freelistCount == 0) {
-                    return;
-                }
+            try (PreparedStatement stmt = pf.connection.prepareStatement("PRAGMA freelist_count");
+                 ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) return;
+                freelistCount = rs.getInt(1);
+            }
 
-                pf.logger.debug("Current freelist_count: {}", freelistCount);
+            if (pageCount == 0 || freelistCount == 0) return;
 
-                if (freelistCount >= MAX_FREE_LIST_COUNT) { // поріг – налаштовується
-                    int pagesToVacuum = freelistCount / 2;
-                    try (PreparedStatement vacuumStmt = pf.connection.prepareStatement("PRAGMA incremental_vacuum(" + pagesToVacuum + ")")) {
-                        vacuumStmt.execute();
-                        pf.logger.debug("Ran incremental_vacuum({})", pagesToVacuum);
-                    }
-                } else {
-                    pf.logger.debug("freelist_count ({}) below threshold, skipping vacuum", freelistCount);
+            double fragmentation = (double) freelistCount / pageCount;
+            pf.logger.debug("freelist={}, pages={}, fragmentation={}%",
+                    freelistCount, pageCount, String.format("%.1f", fragmentation * 100));
+
+            if (fragmentation >= VACUUM_FRAGMENTATION_THRESHOLD) {
+                try (PreparedStatement vacuumStmt = pf.connection.prepareStatement(
+                        "PRAGMA incremental_vacuum(" + freelistCount + ")")) {
+                    vacuumStmt.execute();
+                    pf.logger.info("Ran incremental_vacuum({}) — fragmentation was {}%",
+                            freelistCount, String.format("%.1f", fragmentation * 100));
                 }
             }
 
         } catch (SQLException e) {
-            pf.logger.warn("Failed to check freelist_count or run incremental_vacuum: {}", e.getMessage());
+            pf.logger.warn("Failed to run incremental_vacuum: {}", e.getMessage());
         }
     }
 
