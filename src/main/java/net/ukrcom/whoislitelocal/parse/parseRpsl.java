@@ -178,7 +178,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.storeTempStmt = tempStmt;
 
                 while ((this.line = reader.readLine()) != null) {
-                    if (!this.line.startsWith("#")) {
+                    if (!this.line.startsWith("#") && !this.line.startsWith("%")) {
                         store(this.pf);
                     }
                 }
@@ -254,7 +254,11 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 //            this.pf.logger.debug("3. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
             return;
         }
-        this.block.append(this.line.trim());
+        if (this.block == null) {
+            this.pf.logger.warn("Unexpected content before first block separator, skipping: {}", this.line);
+            return;
+        }
+        this.block.append(this.line.stripTrailing());
         this.block.append("\n");
         this.linesOfBlock++;
 
@@ -362,22 +366,19 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             this.pf.logger.info("No processed, skipping outdated rpsl cleanup");
             return;
         }
+        // Iterate over distinct key types seen in this file (not individual values),
+        // and remove any DB record of that type that was absent from the parsed file.
+        // temp_rpsl holds all (key, value) pairs actually processed, so NOT EXISTS
+        // correctly identifies stale records across the entire key type.
         try (PreparedStatement deleteRpslStmt = this.pf.connection.prepareStatement(
-                "DELETE FROM rpsl WHERE key = ? AND value = ? AND NOT EXISTS "
+                "DELETE FROM rpsl WHERE key = ? AND NOT EXISTS "
                 + "(SELECT 1 FROM temp_rpsl t WHERE t.key = rpsl.key AND t.value = rpsl.value)")) {
-            for (Map.Entry<String, String> entry : this.blockCache.entrySet()) {
-
-                String blockKey = entry.getKey();
-                String blockValue = entry.getValue();
-
-                deleteRpslStmt.setString(1, blockKey);
-                deleteRpslStmt.setString(2, blockValue);
-
+            for (String keyType : this.blockCache.keySet()) {
+                deleteRpslStmt.setString(1, keyType);
                 int deleted = deleteRpslStmt.executeUpdate();
                 if (deleted > 0) {
-                    this.pf.logger.info("Deleted {} outdated rpsl: [{} : {}]", deleted, blockKey, blockValue);
+                    this.pf.logger.info("Deleted {} outdated rpsl records of type [{}]", deleted, keyType);
                 }
-
             }
         }
     }
