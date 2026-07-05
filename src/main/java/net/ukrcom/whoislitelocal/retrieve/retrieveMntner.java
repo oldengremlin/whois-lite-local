@@ -50,7 +50,7 @@ public class retrieveMntner {
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
                     this.mntnerBlock = rs.getString("block");
-                    System.out.println(this.mntnerBlock);
+                    Config.printBlock(this.mntnerBlock);
                     System.out.println();
                 }
             }
@@ -70,7 +70,7 @@ public class retrieveMntner {
                 while (rs.next()) {
                     this.mntnerRoleKey = rs.getString("key");
                     this.mntnerBlock = getMntnerRoleBlock();
-                    System.out.println(this.mntnerBlock);
+                    Config.printBlock(this.mntnerBlock);
                     System.out.println();
                 }
             }

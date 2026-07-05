@@ -17,6 +17,8 @@ package net.ukrcom.whoislitelocal;
 
 import ch.qos.logback.classic.Logger;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
+import java.util.Set;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -55,5 +57,29 @@ public class Config {
 
     public static DateTimeFormatter getDateFormatter() {
         return DATE_FORMATTER;
+    }
+
+    /**
+     * Prints an RPSL block to stdout, suppressing duplicate "field: value" lines
+     * within each blank-line-separated section. The seen-set resets at every
+     * blank line so that identical fields in different RPSL objects (e.g. two
+     * role objects both carrying country: UA) are printed independently.
+     *
+     * To deduplicate across multiple logically-related strings (e.g. an RPSL
+     * block and a synthetic summary from the asn table), concatenate them with
+     * a single '\n' separator (no blank line) before calling this method — they
+     * will then share the same section and seen-set.
+     */
+    public static void printBlock(String block) {
+        if (block == null || block.isEmpty()) return;
+        Set<String> sectionSeen = new HashSet<>();
+        for (String line : block.split("\n", -1)) {
+            if (line.isBlank()) {
+                sectionSeen.clear();
+                System.out.println();
+            } else if (sectionSeen.add(line)) {
+                System.out.println(line);
+            }
+        }
     }
 }

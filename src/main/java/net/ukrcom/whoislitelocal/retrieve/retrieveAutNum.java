@@ -48,8 +48,13 @@ public class retrieveAutNum {
             ResultSet rs = selectStmt.executeQuery();
             while (rs.next()) {
                 this.autNumBlock = rs.getString("block");
-                System.out.println(this.autNumBlock);
-                System.out.println(getAsn(this.autNum));
+                String asnSummary = getAsn(this.autNum);
+                // Combine into one section so shared fields (country:, as-name:)
+                // are deduplicated within the same seen-set by printBlock().
+                String combined = this.autNumBlock.stripTrailing()
+                        + (asnSummary.isBlank() ? "" : "\n" + asnSummary.stripTrailing());
+                Config.printBlock(combined);
+                System.out.println();
             }
 
         } catch (SQLException ex) {
@@ -66,7 +71,7 @@ public class retrieveAutNum {
                     String key = parts[0].trim();
                     String value = parts[1].trim();
                     if (key.equals("org:")) {
-                        System.out.println(getOrg(value));
+                        Config.printBlock(getOrg(value));
                     }
                 }
             });

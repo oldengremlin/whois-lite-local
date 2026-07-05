@@ -96,7 +96,7 @@ public class retrieveNetworkOrigin {
                 while (rs.next()) {
                     this.network = rs.getString("network");
                     this.originBlock = getRouteNetworkBlock();
-                    System.out.println(this.originBlock);
+                    Config.printBlock(this.originBlock);
                 }
             } catch (SQLException ex) {
                 this.logger.error("Failed to search network for RouteOrigin: {}", ipv4Address.toString(), ex);
