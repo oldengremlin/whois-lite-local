@@ -59,19 +59,24 @@ public class Config {
         return DATE_FORMATTER;
     }
 
+    // Tracks complete blocks already printed in this JVM run (Highlander rule:
+    // if two retrieve results return an identical RPSL object, show it once).
+    private static final Set<String> printedBlocks = new HashSet<>();
+
     /**
-     * Prints an RPSL block to stdout, suppressing duplicate "field: value" lines
-     * within each blank-line-separated section. The seen-set resets at every
-     * blank line so that identical fields in different RPSL objects (e.g. two
-     * role objects both carrying country: UA) are printed independently.
+     * Prints an RPSL block to stdout with two layers of deduplication:
      *
-     * To deduplicate across multiple logically-related strings (e.g. an RPSL
-     * block and a synthetic summary from the asn table), concatenate them with
-     * a single '\n' separator (no blank line) before calling this method — they
-     * will then share the same section and seen-set.
+     * 1. Highlander (whole-block): if an identical block was already printed
+     *    during this run, the call is a no-op.
+     *
+     * 2. Intra-section: within each blank-line-separated RPSL section the
+     *    seen-set suppresses duplicate "field: value" lines. The set resets at
+     *    every blank line, so the same field value in two independent objects
+     *    (e.g. two role blocks both with country: UA) is printed for each.
      */
     public static void printBlock(String block) {
         if (block == null || block.isEmpty()) return;
+        if (!printedBlocks.add(block.strip())) return;
         Set<String> sectionSeen = new HashSet<>();
         for (String line : block.split("\n", -1)) {
             if (line.isBlank()) {

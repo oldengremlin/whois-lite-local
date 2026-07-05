@@ -21,6 +21,8 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashSet;
+import java.util.Set;
 import net.ukrcom.whoislitelocal.Config;
 
 /**
@@ -48,13 +50,28 @@ public class retrieveAutNum {
             ResultSet rs = selectStmt.executeQuery();
             while (rs.next()) {
                 this.autNumBlock = rs.getString("block");
+                Config.printBlock(this.autNumBlock);
+
                 String asnSummary = getAsn(this.autNum);
-                // Combine into one section so shared fields (country:, as-name:)
-                // are deduplicated within the same seen-set by printBlock().
-                String combined = this.autNumBlock.stripTrailing()
-                        + (asnSummary.isBlank() ? "" : "\n" + asnSummary.stripTrailing());
-                Config.printBlock(combined);
-                System.out.println();
+                if (!asnSummary.isBlank()) {
+                    // Build a set of lines already present in the RPSL block so
+                    // that the synthetic summary (country:, as-name:) does not
+                    // repeat what the block already contains.
+                    Set<String> blockLines = new HashSet<>();
+                    this.autNumBlock.lines()
+                            .filter(l -> !l.isBlank())
+                            .forEach(blockLines::add);
+                    boolean anyPrinted = false;
+                    for (String line : asnSummary.split("\n")) {
+                        if (!blockLines.contains(line)) {
+                            System.out.println(line);
+                            anyPrinted = true;
+                        }
+                    }
+                    if (anyPrinted) {
+                        System.out.println();
+                    }
+                }
             }
 
         } catch (SQLException ex) {
