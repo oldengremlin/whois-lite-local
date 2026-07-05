@@ -22,12 +22,27 @@ mvn clean install
 
 ## Конфігурація
 
-Створіть файл `whoislitelocal.properties` з переліком URL для завантаження:
+Перед збіркою створіть файл `src/main/resources/whoislitelocal.properties`
+(він виключений з git — `.gitignore` — оскільки містить приватні URL дзеркал).
+
+Файл **вбудовується у JAR** під час збірки (`mvn package`) і завантажується з classpath —
+тому зібраний JAR можна запускати з будь-якої директорії.
+
+Файл має рівно **чотири ключі**; значення кожного — URL або список URL через кому:
 
 ```properties
-url.1=https://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest
-url.2=https://ftp.ripe.net/ripe/dbase/ripe.db.gz
-# ...
+# Extended-файли делегувань від усіх RIR (через кому якщо їх кілька)
+urls_extended=https://example.com/delegated-ripencc-extended-latest,\
+              https://example.com/delegated-arin-extended-latest
+
+# Файл з назвами AS (asnames)
+asnames=https://example.com/asn.txt
+
+# Файл геолокацій
+geolocations=https://example.com/geolocations.csv
+
+# RPSL-дамп бази даних (ripe.db або аналог)
+ripedb=https://example.com/ripe.db.gz
 ```
 
 ## Usage
