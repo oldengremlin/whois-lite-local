@@ -33,7 +33,7 @@ import org.sqlite.Function;
 public class retrieveMntner {
 
     protected String mntner;
-    protected String mntnerRoleKey;
+    protected String mntnerRoleValue;
     protected String mntnerBlock;
     private final Logger logger;
 
@@ -63,12 +63,12 @@ public class retrieveMntner {
     public retrieveMntner printMntnerRole() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT key FROM rpsl_mntby WHERE mntby=? AND value=?")) {
+                    "SELECT value FROM rpsl_mntby WHERE key=? AND mntby=?")) {
                 selectStmt.setString(1, "role");
                 selectStmt.setString(2, this.mntner);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
-                    this.mntnerRoleKey = rs.getString("key");
+                    this.mntnerRoleValue = rs.getString("value");
                     this.mntnerBlock = getMntnerRoleBlock();
                     Config.printBlock(this.mntnerBlock);
                     System.out.println();
@@ -86,7 +86,7 @@ public class retrieveMntner {
             try (PreparedStatement selectStmt = conn.prepareStatement(
                     "SELECT block FROM rpsl WHERE key=? AND value=?")) {
                 selectStmt.setString(1, "role");
-                selectStmt.setString(2, this.mntnerRoleKey);
+                selectStmt.setString(2, this.mntnerRoleValue);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
                     retVal.append(rs.getString("block"));
