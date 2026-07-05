@@ -327,6 +327,16 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.pf.logger.debug("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
                 this.pf.logger.debug("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
                 if (existingShaBlock.equals(shaBlock)) {
+                    // Block unchanged — still register as seen to protect from cleanup
+                    this.storeTempStmt.setString(1, this.key);
+                    this.storeTempStmt.setString(2, this.value);
+                    this.storeTempStmt.addBatch();
+                    if (++this.batchCount >= this.BATCH_SIZE) {
+                        this.storeInsertStmt.executeBatch();
+                        this.storeTempStmt.executeBatch();
+                        this.pf.logger.info("Executed batch of {} RPSL records", this.batchCount);
+                        this.batchCount = 0;
+                    }
                     return;
                 }
 
