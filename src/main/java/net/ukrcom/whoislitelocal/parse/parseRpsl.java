@@ -160,11 +160,11 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                  PreparedStatement insertRpslOrigin = this.pf.connection.prepareStatement(
                          "INSERT OR REPLACE INTO rpsl_origin (origin, route) VALUES (?, ?)");
                  PreparedStatement insertRpslMntBy = this.pf.connection.prepareStatement(
-                         "INSERT OR REPLACE INTO rpsl_mntby (mntby, key, value) VALUES (?, ?, ?)");
+                         "INSERT OR REPLACE INTO rpsl_mntby (key, value, mntby) VALUES (?, ?, ?)");
                  PreparedStatement insertTempRpslOrigin = this.pf.connection.prepareStatement(
                          "INSERT OR REPLACE INTO temp_rpsl_origin (origin, route) VALUES (?, ?)");
                  PreparedStatement insertTempRpslMntBy = this.pf.connection.prepareStatement(
-                         "INSERT OR REPLACE INTO temp_rpsl_mntby (mntby, key, value) VALUES (?, ?, ?)");
+                         "INSERT OR REPLACE INTO temp_rpsl_mntby (key, value, mntby) VALUES (?, ?, ?)");
                  PreparedStatement tempStmt = this.pf.connection.prepareStatement(
                          "INSERT OR IGNORE INTO temp_rpsl (key, value) VALUES (?, ?)")) {
 
@@ -419,9 +419,9 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
     private void storeRpslMntBy() {
         Map.Entry<String, List<String>> result = blockExtractor("mnt-by");
-        String rpsl_mntbyKey = result.getKey();
+        String mntbyObjectId = result.getKey();
         List<String> rpsl_mntbyValues = result.getValue();
-        saveRpslMntBy(rpsl_mntbyKey, rpsl_mntbyValues);
+        saveRpslMntBy(mntbyObjectId, rpsl_mntbyValues);
     }
 
     private void saveRpslOrigin(String rpsl_originRoute, List<String> origins) {
@@ -451,21 +451,21 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         }
     }
 
-    private void saveRpslMntBy(String rpsl_mntbyKey, List<String> rpsl_mntbyValues) {
+    private void saveRpslMntBy(String mntbyObjectId, List<String> rpsl_mntbyValues) {
         try {
             for (String mntbyValue : rpsl_mntbyValues) {
                 this.storeInsertRpslMntBy.setString(1, this.key);
-                this.storeInsertRpslMntBy.setString(2, rpsl_mntbyKey);
+                this.storeInsertRpslMntBy.setString(2, mntbyObjectId);
                 this.storeInsertRpslMntBy.setString(3, mntbyValue);
                 this.storeInsertRpslMntBy.addBatch();
 
                 this.storeInsertTempRpslMntBy.setString(1, this.key);
-                this.storeInsertTempRpslMntBy.setString(2, rpsl_mntbyKey);
+                this.storeInsertTempRpslMntBy.setString(2, mntbyObjectId);
                 this.storeInsertTempRpslMntBy.setString(3, mntbyValue);
                 this.storeInsertTempRpslMntBy.addBatch();
 
                 this.pf.logger.debug("[{}] Store RPSL mnt-by for {} → [{} : {}]",
-                        this.batchCountRpslMntBy, this.key, rpsl_mntbyKey, mntbyValue);
+                        this.batchCountRpslMntBy, this.key, mntbyObjectId, mntbyValue);
 
                 if (++this.batchCountRpslMntBy >= this.BATCH_SIZE) {
                     this.storeInsertRpslMntBy.executeBatch();
@@ -476,7 +476,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             }
         } catch (SQLException ex) {
             this.pf.logger.warn("Can't store RPSL mnt-by for {} → [{} : {}]",
-                    this.batchCountRpslMntBy, this.key, rpsl_mntbyKey, rpsl_mntbyValues);
+                    this.batchCountRpslMntBy, this.key, mntbyObjectId, rpsl_mntbyValues);
         }
     }
 
