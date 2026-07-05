@@ -24,7 +24,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -58,7 +57,10 @@ public class processFiles {
             return this;
         }
         Properties props = new Properties();
-        try (var input = Files.newInputStream(Paths.get("src/main/resources", Config.getPropertiesFile()))) {
+        try (InputStream input = processFiles.class.getClassLoader().getResourceAsStream(Config.getPropertiesFile())) {
+            if (input == null) {
+                throw new IOException("Configuration file not found in classpath: " + Config.getPropertiesFile());
+            }
             props.load(input);
         }
         String[] urls = props.getProperty(paramUrls).split(",");
