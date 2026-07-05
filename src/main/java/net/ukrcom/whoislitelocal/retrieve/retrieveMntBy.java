@@ -33,7 +33,7 @@ import org.sqlite.Function;
 public class retrieveMntBy {
 
     protected String mntBy;
-    protected String mntByKey;
+    protected String mntByValue;
     protected String mntByBlock;
     private final Logger logger;
 
@@ -45,11 +45,11 @@ public class retrieveMntBy {
     public retrieveMntBy printMntBy() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             try (PreparedStatement selectStmt = conn.prepareStatement(
-                    "SELECT key FROM rpsl_mntby WHERE mntby IN (\"aut-num\", \"as-set\") AND value = ?")) {
+                    "SELECT value FROM rpsl_mntby WHERE key IN (\"aut-num\", \"as-set\") AND mntby = ?")) {
                 selectStmt.setString(1, this.mntBy);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
-                    this.mntByKey = rs.getString("key");
+                    this.mntByValue = rs.getString("value");
                     this.mntByBlock = getMntByBlock();
                     Config.printBlock(this.mntByBlock);
                     System.out.println();
@@ -66,7 +66,7 @@ public class retrieveMntBy {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             try (PreparedStatement selectStmt = conn.prepareStatement(
                     "SELECT block FROM rpsl WHERE key IN (\"aut-num\", \"as-set\") AND value=?")) {
-                selectStmt.setString(1, this.mntByKey);
+                selectStmt.setString(1, this.mntByValue);
                 ResultSet rs = selectStmt.executeQuery();
                 while (rs.next()) {
                     retVal.append(rs.getString("block"));
