@@ -51,7 +51,7 @@ public class retrieveMntBy {
                 while (rs.next()) {
                     this.mntByKey = rs.getString("key");
                     this.mntByBlock = getMntByBlock();
-                    System.out.println(this.mntByBlock);
+                    Config.printBlock(this.mntByBlock);
                     System.out.println();
                 }
             }

@@ -21,6 +21,8 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashSet;
+import java.util.Set;
 import net.ukrcom.whoislitelocal.Config;
 
 /**
@@ -48,8 +50,28 @@ public class retrieveAutNum {
             ResultSet rs = selectStmt.executeQuery();
             while (rs.next()) {
                 this.autNumBlock = rs.getString("block");
-                System.out.println(this.autNumBlock);
-                System.out.println(getAsn(this.autNum));
+                Config.printBlock(this.autNumBlock);
+
+                String asnSummary = getAsn(this.autNum);
+                if (!asnSummary.isBlank()) {
+                    // Build a set of lines already present in the RPSL block so
+                    // that the synthetic summary (country:, as-name:) does not
+                    // repeat what the block already contains.
+                    Set<String> blockLines = new HashSet<>();
+                    this.autNumBlock.lines()
+                            .filter(l -> !l.isBlank())
+                            .forEach(blockLines::add);
+                    boolean anyPrinted = false;
+                    for (String line : asnSummary.split("\n")) {
+                        if (!blockLines.contains(line)) {
+                            System.out.println(line);
+                            anyPrinted = true;
+                        }
+                    }
+                    if (anyPrinted) {
+                        System.out.println();
+                    }
+                }
             }
 
         } catch (SQLException ex) {
@@ -66,7 +88,7 @@ public class retrieveAutNum {
                     String key = parts[0].trim();
                     String value = parts[1].trim();
                     if (key.equals("org:")) {
-                        System.out.println(getOrg(value));
+                        Config.printBlock(getOrg(value));
                     }
                 }
             });

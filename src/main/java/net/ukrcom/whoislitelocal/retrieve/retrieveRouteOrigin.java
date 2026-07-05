@@ -48,7 +48,7 @@ public class retrieveRouteOrigin {
                 while (rs.next()) {
                     this.originRoute = rs.getString("route");
                     this.originBlock = getRouteOriginBlock();
-                    System.out.println(this.originBlock);
+                    Config.printBlock(this.originBlock);
                 }
             }
         } catch (SQLException ex) {

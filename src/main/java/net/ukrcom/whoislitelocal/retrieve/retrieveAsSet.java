@@ -47,7 +47,7 @@ public class retrieveAsSet {
             ResultSet rs = selectStmt.executeQuery();
             while (rs.next()) {
                 this.asSetBlock = rs.getString("block");
-                System.out.println(this.asSetBlock);
+                Config.printBlock(this.asSetBlock);
             }
 
         } catch (SQLException ex) {
