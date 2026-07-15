@@ -1,30 +1,32 @@
-# Changelog
+# Журнал змін
 
-All notable changes to this project will be documented in this file.
+Усі помітні зміни в цьому проекті документуються тут.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Формат базується на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+проект дотримується [Семантичного версіонування](https://semver.org/spec/v2.0.0.html).
 
 ## [1.1.0] — 2026-07-15
-### Added
-- Parallel HTTP downloads within each URL group using virtual threads: all files that need updating are downloaded concurrently
-- Parallel execution of independent parsers (parseExtended, parseAsnames, parseGeolocations) in executeGetData; these write to non-overlapping tables. parseRpsl runs sequentially after them
-- SQLite WAL mode (PRAGMA journal_mode = WAL) for better concurrent read/write behaviour
-- PRAGMA busy_timeout = 30000 on every connection to handle write contention under parallel load
-- Lombok @Slf4j replacing manual Logger fields across all classes; each class now logs under its own name
-- CONTRIBUTING.md with build, configuration and branch strategy
 
-### Fixed
-- cleanupOutdatedRpsl deleted all unchanged RPSL records on every incremental run: saveBlock() returned early without inserting unchanged blocks into temp_rpsl, so the NOT EXISTS predicate treated every unchanged object as stale
-- processFiles loaded whoislitelocal.properties from filesystem path, making JAR location-dependent; switched to classpath loading via getResourceAsStream()
+### Додано
+- Паралельне завантаження HTTP у межах кожної групи URL за допомогою virtual threads: усі файли, що потребують оновлення, завантажуються одночасно
+- Паралельне виконання незалежних парсерів (`parseExtended`, `parseAsnames`, `parseGeolocations`) в `executeGetData`; вони записують у різні таблиці. `parseRpsl` виконується після них послідовно
+- SQLite WAL-режим (`PRAGMA journal_mode = WAL`) для кращої паралельної роботи з читанням/записом
+- `PRAGMA busy_timeout = 30000` на кожному з'єднанні для коректного очікування при конкуренції за запис
+- Lombok `@Slf4j` замість ручних полів `Logger` у всіх класах; кожен клас тепер логує під власним ім'ям
+- `CONTRIBUTING.md` із описом збірки, конфігурації та гілкової стратегії
 
-### Changed
-- VACUUM threshold changed from absolute 100 pages to relative 25% fragmentation ratio
-- Output deduplication: Config.printBlock() deduplicates at SHA-512 block level (Highlander) and RFC 2622 §2 continuation-aware intra-block attribute level
-- RPSL continuation lines preserved with stripTrailing() instead of trim()
+### Виправлено
+- `cleanupOutdatedRpsl` видаляв усі незмінені RPSL-записи при кожному інкрементальному оновленні: `saveBlock()` повертався раніше, не вставляючи незмінені блоки в `temp_rpsl`, тому предикат `NOT EXISTS` вважав кожен незмінений об'єкт застарілим
+- `processFiles` завантажував `whoislitelocal.properties` з файлової системи за відносним шляхом, що робило JAR залежним від поточної директорії; перейшло на завантаження з classpath через `getResourceAsStream()`
+
+### Змінено
+- Поріг VACUUM змінено з абсолютного (100 сторінок) на відносний (25% фрагментації)
+- Дедублікація виводу: `Config.printBlock()` дедублює на рівні блоків (SHA-512 Highlander) та на рівні атрибутів всередині блоку з урахуванням continuation-рядків (RFC 2622 §2)
+- Continuation-рядки RPSL тепер зберігаються через `stripTrailing()` замість `trim()`
 
 ## [1.0.0] — 2025-01-01
-### Added
-- Initial release: download and parse RIR extended delegation files, RIPE asnames, geolocations, and ripe.db RPSL dump into a local SQLite database
-- CLI: --get-data, --retrieve-aut-num, --retrieve-as-set, --retrieve-mntner, --retrieve-mnt-by, --retrieve-organisation, --retrieve-route-origin, --retrieve-network-origin
-- docs/DATABASE.md schema documentation
+
+### Додано
+- Перший реліз: завантаження та парсинг extended-файлів делегувань RIR, RIPE asnames, geolocations та дампу `ripe.db` у локальну SQLite-базу
+- CLI: `--get-data`, `--retrieve-aut-num`, `--retrieve-as-set`, `--retrieve-mntner`, `--retrieve-mnt-by`, `--retrieve-organisation`, `--retrieve-route-origin`, `--retrieve-network-origin`
+- `docs/DATABASE.md` — документація схеми бази даних
