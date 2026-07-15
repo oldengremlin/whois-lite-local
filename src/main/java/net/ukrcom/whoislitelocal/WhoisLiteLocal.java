@@ -39,7 +39,7 @@ public class WhoisLiteLocal {
                 CommandLineParser.printHelp();
                 System.exit(0xff);
             } else if (parser.isGetData()) {
-                executeGetData();
+                executeGetData(parser.isVacuum());
             } else if (parser.isRetrieveAutNum()) {
                 executeRetrieveAutNum(parser.getAutNum());
             } else if (parser.isRetrieveAsSet()) {
@@ -54,6 +54,8 @@ public class WhoisLiteLocal {
                 executeRouteOrigin(parser.getRouteOrigin());
             } else if (parser.isNetworkOrigin()) {
                 executeNetworkOrigin(parser.getNetworkOrigin());
+            } else if (parser.isVacuum()) {
+                executeVacuum();
             } else {
                 CommandLineParser.printHelp();
                 System.exit(0xfd);
@@ -64,7 +66,7 @@ public class WhoisLiteLocal {
         }
     }
 
-    private static void executeGetData() {
+    private static void executeGetData(boolean vacuum) {
         long startTime = System.currentTimeMillis();
         try {
             new initializeDatabase().createTables();
@@ -121,6 +123,10 @@ public class WhoisLiteLocal {
 
             new processFiles().process("ripedb", new parseRpsl());
 
+            if (vacuum) {
+                executeVacuum();
+            }
+
         } catch (IOException e) {
             log.error("Main process (IOException)", e);
         } catch (SQLException e) {
@@ -129,6 +135,18 @@ public class WhoisLiteLocal {
             log.error("Main process (URISyntaxException)", e);
         } finally {
             log.info("executeGetData completed in {} ms", System.currentTimeMillis() - startTime);
+        }
+    }
+
+    private static void executeVacuum() {
+        long startTime = System.currentTimeMillis();
+        log.info("Running full VACUUM...");
+        try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
+             var stmt = conn.createStatement()) {
+            stmt.execute("VACUUM");
+            log.info("VACUUM completed in {} ms", System.currentTimeMillis() - startTime);
+        } catch (SQLException e) {
+            log.error("VACUUM failed", e);
         }
     }
 

@@ -85,6 +85,11 @@ public class CommandLineParser {
                             .desc("Get information on the route and route6 object.")
                             .build()
             )
+            .addOption(
+                    Option.builder("vc").longOpt("vacuum")
+                            .desc("Run full VACUUM to compact the database (can be combined with --get-data or used standalone)")
+                            .build()
+            )
             .addOption("h", "help", false, "Show help");
 
     private final CommandLine cmd;
@@ -164,6 +169,10 @@ public class CommandLineParser {
 
     public String getNetworkOrigin() {
         return checkValue(cmd.getOptionValue("retrieve-network-origin"));
+    }
+
+    public boolean isVacuum() {
+        return cmd.hasOption("vacuum");
     }
 
     public static void printHelp() {
