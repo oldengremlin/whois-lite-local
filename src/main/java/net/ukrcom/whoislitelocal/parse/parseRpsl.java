@@ -218,6 +218,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             }
 
             cleanupOutdatedRpsl(this.pf);
+            cleanupRpslOriginAndMntBy();
 
         } catch (IOException ex) {
             log.error("Can't parse temporary file {}", this.pf.tempFile, ex);
