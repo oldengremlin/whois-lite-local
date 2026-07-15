@@ -1,28 +1,43 @@
-# Contributing to whois-lite-local
+# Участь у розробці whois-lite-local
 
-## Requirements
+## Вимоги
+
 Java 21+, Maven 3.6+
 
-## Build
+## Збірка
+
+```bash
 mvn clean package
-On systems with non-functional IPv6: MAVEN_OPTS="-Djava.net.preferIPv4Stack=true" mvn clean package
+```
 
-## Configuration
-Create src/main/resources/whoislitelocal.properties (git-ignored) before building.
-The file is bundled into the JAR by Maven Shade and loaded from classpath — JAR runs from any directory.
+На системах із непрацюючим IPv6:
+```bash
+MAVEN_OPTS="-Djava.net.preferIPv4Stack=true" mvn clean package
+```
 
-Required keys: urls_extended, asnames, geolocations, ripedb (URL or comma-separated URLs)
+## Конфігурація
 
-## Branch strategy
-- main: stable
-- feature/fix branches: PR into main
+Перед збіркою створіть файл `src/main/resources/whoislitelocal.properties` (виключений з git).
+Файл вбудовується в JAR через Maven Shade і завантажується з classpath — JAR можна запускати з будь-якої директорії.
 
-## Code style
-- Java 21, no new dependencies without discussion
-- Existing naming conventions (camelCase classes)
-- No comments unless the WHY is non-obvious
-- Batch JDBC operations — don't replace with row-by-row
+Обов'язкові ключі: `urls_extended`, `asnames`, `geolocations`, `ripedb` (URL або список URL через кому)
 
-## Versioning
-Semantic versioning in pom.xml. Update CHANGELOG.md with every release.
-MAJOR: incompatible DB schema or CLI changes. MINOR: new features. PATCH: bug fixes.
+## Гілкова стратегія
+
+- `main` — стабільна гілка
+- feature/fix-гілки → PR у `main`
+
+## Стиль коду
+
+- Java 21, нові залежності — тільки після обговорення
+- Наявні конвенції іменування (camelCase для класів)
+- Коментарі — лише якщо НЕ ОЧЕВИДНО, *чому* щось зроблено саме так
+- Батчеві JDBC-операції — не замінювати на порядковий INSERT/UPDATE
+
+## Версіонування
+
+Семантичне версіонування в `pom.xml`. При кожному релізі оновлювати `CHANGELOG.md`.
+
+- **MAJOR** — несумісні зміни схеми БД або CLI
+- **MINOR** — нові можливості
+- **PATCH** — виправлення помилок
