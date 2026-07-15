@@ -66,8 +66,6 @@ public class parseAbstract implements parseInterface {
             }
         } catch (IOException ex) {
             log.error("Can't parsing temporary file {}", pf.tempFile);
-        } catch (CompressorException ex) {
-            log.error("Compression error while parsing {}", pf.tempFile, ex);
         } finally {
             // Delete temporary file
             try {

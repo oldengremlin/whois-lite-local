@@ -91,7 +91,6 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     private int batchCountRpslOrigin = 0;
     private int batchCountRpslMntBy = 0;
     private boolean needInitializeTempTables = true;
-    private boolean beginBlock = false;
     private boolean ignoreNext = false;
     private int linesOfBlock = 0;
     private StringBuilder block;
@@ -223,8 +222,6 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
         } catch (IOException ex) {
             log.error("Can't parse temporary file {}", this.pf.tempFile, ex);
-        } catch (CompressorException ex) {
-            log.error("Compression error while parsing {}", this.pf.tempFile, ex);
         } catch (SQLException ex) {
             log.error("Failed to process file or cleanup rpsl", ex);
         } finally {
@@ -274,7 +271,6 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         if (this.linesOfBlock > 0) {
             saveBlock();
         }
-        this.beginBlock = true;
         this.linesOfBlock = 0;
         this.ignoreNext = false;
         this.block = new StringBuilder();
@@ -301,7 +297,6 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
     private void saveBlock() {
 
-        this.beginBlock = false;
 
         if (this.key == null || this.value == null || this.block == null || this.block.isEmpty()) {
             return;
