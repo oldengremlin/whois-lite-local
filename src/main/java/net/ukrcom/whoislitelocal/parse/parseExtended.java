@@ -42,34 +42,34 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
     @Override
     public void parse(processFiles pf) {
         try {
-            if (needInitializeTempTables) {
-                // Initialize temporary tables once per process
-                pf.connection.createStatement().execute("""
-                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv4 (
-                        coordinator TEXT NOT NULL,
-                        identifier TEXT NOT NULL,
-                        network TEXT NOT NULL,
-                        UNIQUE(coordinator, identifier, network)
-                    )""");
-                pf.connection.createStatement().execute("""
-                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv6 (
-                        coordinator TEXT NOT NULL,
-                        identifier TEXT NOT NULL,
-                        network TEXT NOT NULL,
-                        UNIQUE(coordinator, identifier, network)
-                    )""");
-                needInitializeTempTables = false;
-            } else {
-                // Clear temporary tables for this file
-                pf.connection.createStatement().execute("DELETE FROM temp_ipv4");
-                pf.connection.createStatement().execute("DELETE FROM temp_ipv6");
+            synchronized (pf.connection) {
+                if (needInitializeTempTables) {
+                    pf.connection.createStatement().execute("""
+                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv4 (
+                            coordinator TEXT NOT NULL,
+                            identifier TEXT NOT NULL,
+                            network TEXT NOT NULL,
+                            UNIQUE(coordinator, identifier, network)
+                        )""");
+                    pf.connection.createStatement().execute("""
+                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv6 (
+                            coordinator TEXT NOT NULL,
+                            identifier TEXT NOT NULL,
+                            network TEXT NOT NULL,
+                            UNIQUE(coordinator, identifier, network)
+                        )""");
+                    needInitializeTempTables = false;
+                } else {
+                    pf.connection.createStatement().execute("DELETE FROM temp_ipv4");
+                    pf.connection.createStatement().execute("DELETE FROM temp_ipv6");
+                }
             }
             coordinators.clear();
-            // Parse file
             super.parse(pf);
-            // Cleanup outdated networks
-            cleanupOutdatedNetworks(pf);
-            runIncrementalVacuumSmart(pf);
+            synchronized (pf.connection) {
+                cleanupOutdatedNetworks(pf);
+                runIncrementalVacuumSmart(pf);
+            }
         } catch (SQLException e) {
             log.error("Failed to process file or cleanup networks", e);
         }
@@ -90,15 +90,12 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         String identifier = fields[7];
         coordinators.add(coordinator);
         try {
+            // CPU work (IP parsing, validation) happens before acquiring the lock
             switch (type) {
-                case "asn" ->
-                    processAsn(pf, coordinator, country, value, date, identifier);
-                case "ipv4" ->
-                    processIpv4(pf, coordinator, country, value, countOrPrefix, date, identifier);
-                case "ipv6" ->
-                    processIpv6(pf, coordinator, country, value, countOrPrefix, date, identifier);
-                default ->
-                    log.warn("Unknown type: {}", type);
+                case "asn" -> { synchronized (pf.connection) { processAsn(pf, coordinator, country, value, date, identifier); } }
+                case "ipv4" -> { synchronized (pf.connection) { processIpv4(pf, coordinator, country, value, countOrPrefix, date, identifier); } }
+                case "ipv6" -> { synchronized (pf.connection) { processIpv6(pf, coordinator, country, value, countOrPrefix, date, identifier); } }
+                default -> log.warn("Unknown type: {}", type);
             }
         } catch (NumberFormatException e) {
             log.error("Failed to process line, NumberFormatException: {}", line, e);
