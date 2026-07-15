@@ -15,6 +15,7 @@
  */
 package net.ukrcom.whoislitelocal;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
@@ -26,6 +27,7 @@ import org.apache.commons.cli.ParseException;
  *
  * @author olden
  */
+@Slf4j
 public class CommandLineParser {
 
     private static final Options options = new Options()
@@ -88,7 +90,7 @@ public class CommandLineParser {
     private final CommandLine cmd;
 
     public CommandLineParser(String[] args) throws ParseException {
-        Config.getLogger().debug("Received command-line arguments: {}", String.join(" ", args));
+        log.debug("Received command-line arguments: {}", String.join(" ", args));
         DefaultParser parser = new DefaultParser();
         cmd = parser.parse(options, args);
     }

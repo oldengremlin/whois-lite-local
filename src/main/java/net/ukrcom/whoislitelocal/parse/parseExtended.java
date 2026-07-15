@@ -26,12 +26,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.IpUtils;
 
 /**
  *
  * @author olden
  */
+@Slf4j
 public class parseExtended extends parseAbstract implements parseInterface, AutoCloseable {
 
     private final Set<String> coordinators = new HashSet<>();
@@ -69,7 +71,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             cleanupOutdatedNetworks(pf);
             runIncrementalVacuumSmart(pf);
         } catch (SQLException e) {
-            pf.logger.error("Failed to process file or cleanup networks", e);
+            log.error("Failed to process file or cleanup networks", e);
         }
     }
 
@@ -96,14 +98,14 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
                 case "ipv6" ->
                     processIpv6(pf, coordinator, country, value, countOrPrefix, date, identifier);
                 default ->
-                    pf.logger.warn("Unknown type: {}", type);
+                    log.warn("Unknown type: {}", type);
             }
         } catch (NumberFormatException e) {
-            pf.logger.error("Failed to process line, NumberFormatException: {}", line, e);
+            log.error("Failed to process line, NumberFormatException: {}", line, e);
         } catch (SQLException e) {
-            pf.logger.error("Failed to process line, SQLException: {}", line, e);
+            log.error("Failed to process line, SQLException: {}", line, e);
         } catch (UnknownHostException e) {
-            pf.logger.error("Failed to process line, UnknownHostException: {}", line, e);
+            log.error("Failed to process line, UnknownHostException: {}", line, e);
         }
     }
 
@@ -118,7 +120,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
                 String existingCoordinator = rs.getString("coordinator");
                 String existingIdentifier = rs.getString("identifier");
                 if (!coordinator.equals(existingCoordinator) || !identifier.equals(existingIdentifier)) {
-                    pf.logger.warn("ASN {} coordinator or identifier changed: old=[{}, {}], new=[{}, {}]",
+                    log.warn("ASN {} coordinator or identifier changed: old=[{}, {}], new=[{}, {}]",
                             asn, existingCoordinator, existingIdentifier, coordinator, identifier);
                     cleanupNetworks(pf, existingCoordinator, existingIdentifier);
                     try (PreparedStatement updateStmt = pf.connection.prepareStatement(
@@ -158,7 +160,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             firstip = IPBigIntegerWithZero(IP2BigInteger(ipv4Address.getLower().toString()).toString());
             lastip = IPBigIntegerWithZero(IP2BigInteger(ipv4Address.getUpper().toString()).toString());
         } catch (AddressStringException | IncompatibleAddressException e) {
-            pf.logger.error("Invalid network {} : {}", ipv4Network, e);
+            log.error("Invalid network {} : {}", ipv4Network, e);
         }
 
         try (PreparedStatement tempStmt = pf.connection.prepareStatement(
@@ -194,7 +196,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             firstip = IPBigIntegerWithZero(IP2BigInteger(ipv6Address.getLower().toString()).toString());
             lastip = IPBigIntegerWithZero(IP2BigInteger(ipv6Address.getUpper().toString()).toString());
         } catch (AddressStringException | IncompatibleAddressException e) {
-            pf.logger.error("Invalid network {} : {}", ipv6Network, e);
+            log.error("Invalid network {} : {}", ipv6Network, e);
         }
 
         try (PreparedStatement tempStmt = pf.connection.prepareStatement(
@@ -227,7 +229,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             deleteIpv4Stmt.setString(2, identifier);
             int deleted = deleteIpv4Stmt.executeUpdate();
             if (deleted > 0) {
-                pf.logger.info("Deleted {} ipv4 networks for coordinator={}, identifier={}", deleted, coordinator, identifier);
+                log.info("Deleted {} ipv4 networks for coordinator={}, identifier={}", deleted, coordinator, identifier);
             }
         }
         try (PreparedStatement deleteIpv6Stmt = pf.connection.prepareStatement(
@@ -236,25 +238,25 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             deleteIpv6Stmt.setString(2, identifier);
             int deleted = deleteIpv6Stmt.executeUpdate();
             if (deleted > 0) {
-                pf.logger.info("Deleted {} ipv6 networks for coordinator={}, identifier={}", deleted, coordinator, identifier);
+                log.info("Deleted {} ipv6 networks for coordinator={}, identifier={}", deleted, coordinator, identifier);
             }
         }
     }
 
     private void cleanupOutdatedNetworks(processFiles pf) throws SQLException {
         if (coordinators.isEmpty()) {
-            pf.logger.info("No coordinators processed, skipping outdated networks cleanup");
+            log.info("No coordinators processed, skipping outdated networks cleanup");
             return;
         }
         for (String coordinator : coordinators) {
-            pf.logger.info("Checking outdated networks for coordinator {}", coordinator);
+            log.info("Checking outdated networks for coordinator {}", coordinator);
             try (PreparedStatement deleteIpv4Stmt = pf.connection.prepareStatement(
                     "DELETE FROM ipv4 WHERE coordinator = ? AND NOT EXISTS "
                     + "(SELECT 1 FROM temp_ipv4 t WHERE t.coordinator = ipv4.coordinator AND t.identifier = ipv4.identifier AND t.network = ipv4.network)")) {
                 deleteIpv4Stmt.setString(1, coordinator);
                 int deleted = deleteIpv4Stmt.executeUpdate();
                 if (deleted > 0) {
-                    pf.logger.info("Deleted {} outdated ipv4 networks for coordinator {}", deleted, coordinator);
+                    log.info("Deleted {} outdated ipv4 networks for coordinator {}", deleted, coordinator);
                 }
             }
             try (PreparedStatement deleteIpv6Stmt = pf.connection.prepareStatement(
@@ -263,7 +265,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
                 deleteIpv6Stmt.setString(1, coordinator);
                 int deleted = deleteIpv6Stmt.executeUpdate();
                 if (deleted > 0) {
-                    pf.logger.info("Deleted {} outdated ipv6 networks for coordinator {}", deleted, coordinator);
+                    log.info("Deleted {} outdated ipv6 networks for coordinator {}", deleted, coordinator);
                 }
             }
         }

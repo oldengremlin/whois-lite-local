@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.ukr-com</groupId>
     <artifactId>WhoisLiteLocal</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>jar</packaging>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -41,6 +41,13 @@
             <artifactId>commons-cli</artifactId>
             <version>1.9.0</version>
         </dependency>
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.36</version>
+            <scope>provided</scope>
+        </dependency>
         <!-- JDBC SQL log -->
         <!--        <dependency>
             <groupId>com.googlecode.log4jdbc</groupId>
@@ -56,6 +63,13 @@
                 <version>3.14.0</version>
                 <configuration>
                     <release>21</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.36</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
             <plugin>

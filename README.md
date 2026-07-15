@@ -63,6 +63,42 @@ java -jar WhoisLiteLocal-1.0.0.jar [options]
 | `--retrieve-network-origin` | `-rno` | `<net-num>` | Отримати route/route6 об'єкти для вказаної мережі |
 | `--help` | `-h` | — | Показати довідку |
 
+## Алгоритм роботи
+
+```mermaid
+flowchart TD
+    CLI["WhoisLiteLocal.jar &lt;options&gt;"] --> dispatch{аргументи}
+
+    dispatch -->|"--get-data"| init["initializeDatabase\nWAL · auto_vacuum · таблиці · індекси"]
+    dispatch -->|"--retrieve-*"| ret["retrieve*\nSELECT з SQLite → stdout"]
+
+    init --> par_dl["Паралельне завантаження\n(virtual threads)\nurls_extended × N · asnames · geolocations · ripedb"]
+
+    par_dl --> par_p
+
+    subgraph par_p ["Паралельний парсинг (virtual threads)"]
+        direction LR
+        p1["parseExtended\n→ ipv4, ipv6"]
+        p2["parseAsnames\n→ asn"]
+        p3["parseGeolocations\n→ geo"]
+    end
+
+    par_p --> rpsl["parseRpsl\n→ rpsl · rpsl_origin · rpsl_mntby"]
+
+    rpsl --> db[("whoislitelocal.db\nSQLite WAL")]
+    ret --> db
+```
+
+## Паралелізм
+
+`--get-data` виконує роботу у два рівні паралелізму:
+
+**Завантаження (Java virtual threads):** усі файли, що потребують оновлення, завантажуються одночасно.  Для `urls_extended`, де налаштовано кілька RIR-файлів, всі HTTP GET виконуються паралельно.
+
+**Парсинг:** `parseExtended`, `parseAsnames` та `parseGeolocations` записують у різні таблиці (`ipv4`/`ipv6`, `asn`, `geo`) і виконуються паралельно. `parseRpsl` запускається після них, оскільки використовує TEMP-таблиці для порівняння з існуючими даними.
+
+SQLite працює в режимі WAL (`PRAGMA journal_mode = WAL`) з `busy_timeout = 30000 мс`, що дозволяє паралельним з'єднанням коректно чекати на звільнення блокування запису.
+
 ## Примітки
 
 > `src/main/resources/schema.sql` є довідковим артефактом і **не використовується** під час роботи програми. Актуальна схема БД формується кодом (`initializeDatabase.java`) при першому запуску. Детальний опис схеми — у [docs/DATABASE.md](docs/DATABASE.md).

@@ -20,9 +20,11 @@ import java.net.UnknownHostException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.extern.slf4j.Slf4j;
 import static net.ukrcom.whoislitelocal.parse.parseExtended.IP2BigInteger;
 import static net.ukrcom.whoislitelocal.parse.parseExtended.IPBigIntegerWithZero;
 
+@Slf4j
 public class parseGeolocations extends parseAbstract implements parseInterface {
 
     private int batchCount = 0;
@@ -47,7 +49,7 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
             }
             runIncrementalVacuumSmart(pf);
         } catch (SQLException ex) {
-            pf.logger.warn("SQLException: {}", ex);
+            log.warn("SQLException: {}", ex);
         }
     }
 
@@ -59,7 +61,7 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
 
         String[] fields = this.line.split(",");
         if (fields.length < 6) {
-            pf.logger.warn("Invalid geolocations line format: {}", this.line);
+            log.warn("Invalid geolocations line format: {}", this.line);
             return;
         }
 
@@ -71,14 +73,14 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
         String geo = String.join(",", city, region, countryName, countryCode);
 
         if (geo.isEmpty() || countryCode.length() != 2) {
-            pf.logger.warn("Invalid geo data in line: {}", this.line);
+            log.warn("Invalid geo data in line: {}", this.line);
             return;
         }
 
         try {
             BigInteger ipBigInt = IP2BigInteger(ipAddress);
             if (ipBigInt == null) {
-                pf.logger.warn("Invalid IP address: {}", ipAddress);
+                log.warn("Invalid IP address: {}", ipAddress);
                 return;
             }
             String ipBigIntStr = IPBigIntegerWithZero(ipBigInt.toString());
@@ -101,35 +103,35 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                         storeUpdateStmt.setString(1, geoUpdate);
                         storeUpdateStmt.setString(2, ipBigIntStr);
                         storeUpdateStmt.addBatch();
-                        pf.logger.info("Update GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
+                        log.info("Update GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
                         if (++batchCount == BATCH_SIZE) {
                             storeUpdateStmt.executeBatch();
                             batchCount = 0;
                         }
                     } catch (SQLException ex) {
-                        pf.logger.warn("Can't update GEO for {}: {} : ", ipBigIntStr, geo, ex);
+                        log.warn("Can't update GEO for {}: {} : ", ipBigIntStr, geo, ex);
                     }
                 } else {
                     try {
                         storeInsertStmt.setString(1, ipBigIntStr);
                         storeInsertStmt.setString(2, geo);
                         storeInsertStmt.addBatch();
-                        pf.logger.debug("Insert GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
+                        log.debug("Insert GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
                         if (++batchCount == BATCH_SIZE) {
                             storeInsertStmt.executeBatch();
                             batchCount = 0;
                         }
                     } catch (SQLException ex) {
-                        pf.logger.warn("Can't insert GEO for {}: {} : ", ipBigIntStr, geo, ex);
+                        log.warn("Can't insert GEO for {}: {} : ", ipBigIntStr, geo, ex);
                     }
 
                 }
             } catch (SQLException ex) {
-                pf.logger.error("SQLException for line {}: {}", this.line, ex.getMessage(), ex);
+                log.error("SQLException for line {}: {}", this.line, ex.getMessage(), ex);
             }
 
         } catch (UnknownHostException ex) {
-            pf.logger.warn("Error in parse data: {}", this.line, ex);
+            log.warn("Error in parse data: {}", this.line, ex);
         }
 
     }

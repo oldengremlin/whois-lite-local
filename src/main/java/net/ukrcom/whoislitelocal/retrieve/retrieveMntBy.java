@@ -15,7 +15,6 @@
  */
 package net.ukrcom.whoislitelocal.retrieve;
 
-import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -23,6 +22,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 import org.sqlite.Function;
 
@@ -30,16 +30,15 @@ import org.sqlite.Function;
  *
  * @author olden
  */
+@Slf4j
 public class retrieveMntBy {
 
     protected String mntBy;
     protected String mntByValue;
     protected String mntByBlock;
-    private final Logger logger;
 
     public retrieveMntBy(String mntBy) {
         this.mntBy = mntBy;
-        this.logger = Config.getLogger();
     }
 
     public retrieveMntBy printMntBy() {
@@ -56,7 +55,7 @@ public class retrieveMntBy {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to print MntBy", ex);
+            log.error("Failed to print MntBy", ex);
         }
         return this;
     }
@@ -74,7 +73,7 @@ public class retrieveMntBy {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve MntBy", ex);
+            log.error("Failed to retrieve MntBy", ex);
         }
         return retVal.toString();
     }

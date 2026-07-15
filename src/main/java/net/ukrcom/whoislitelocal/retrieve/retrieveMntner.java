@@ -15,7 +15,6 @@
  */
 package net.ukrcom.whoislitelocal.retrieve;
 
-import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -23,6 +22,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 import org.sqlite.Function;
 
@@ -30,16 +30,15 @@ import org.sqlite.Function;
  *
  * @author olden
  */
+@Slf4j
 public class retrieveMntner {
 
     protected String mntner;
     protected String mntnerRoleValue;
     protected String mntnerBlock;
-    private final Logger logger;
 
     public retrieveMntner(String mntBy) {
         this.mntner = mntBy;
-        this.logger = Config.getLogger();
     }
 
     public retrieveMntner printMntner() {
@@ -55,7 +54,7 @@ public class retrieveMntner {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum", ex);
+            log.error("Failed to retrieve AutNum", ex);
         }
         return this;
     }
@@ -75,7 +74,7 @@ public class retrieveMntner {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to print MntnerRole", ex);
+            log.error("Failed to print MntnerRole", ex);
         }
         return this;
     }
@@ -94,7 +93,7 @@ public class retrieveMntner {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve MntnerRole", ex);
+            log.error("Failed to retrieve MntnerRole", ex);
         }
         return retVal.toString();
     }

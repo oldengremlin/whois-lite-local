@@ -15,7 +15,6 @@
  */
 package net.ukrcom.whoislitelocal.retrieve;
 
-import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -23,21 +22,21 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
 /**
  *
  * @author olden
  */
+@Slf4j
 public class retrieveAutNum {
 
     protected String autNum;
     protected String autNumBlock;
-    protected final Logger logger;
 
     public retrieveAutNum(String autNum) {
         this.autNum = autNum;
-        this.logger = Config.getLogger();
     }
 
     public retrieveAutNum printAutNum() {
@@ -75,7 +74,7 @@ public class retrieveAutNum {
             }
 
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum", ex);
+            log.error("Failed to retrieve AutNum", ex);
         }
         return this;
     }
@@ -111,7 +110,7 @@ public class retrieveAutNum {
             }
 
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve Org", ex);
+            log.error("Failed to retrieve Org", ex);
         }
         return retVal.toString();
     }
@@ -136,7 +135,7 @@ public class retrieveAutNum {
                 retVal.append("\n");
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve Asn", ex);
+            log.error("Failed to retrieve Asn", ex);
         }
         return retVal.toString();
     }

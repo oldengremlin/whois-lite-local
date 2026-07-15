@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import static net.ukrcom.whoislitelocal.initializeDatabase.sha512;
 import org.apache.commons.compress.compressors.CompressorException;
 
@@ -80,8 +81,9 @@ import org.apache.commons.compress.compressors.CompressorException;
                 extractedKeyValue:
                 rtr-set:
                 source:
-                tech-c:        
+                tech-c:
  */
+@Slf4j
 public class parseRpsl extends parseAbstract implements parseInterface {
 
     private processFiles pf;
@@ -202,9 +204,9 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 runIncrementalVacuumSmart(pf);
 
             } catch (SQLException ex) {
-                this.pf.logger.error("Failed to process RPSL batch", ex);
+                log.error("Failed to process RPSL batch", ex);
             } catch (Exception ex) {
-                this.pf.logger.error("Exception", ex);
+                log.error("Exception", ex);
             }
             // Update file metadata
             try (PreparedStatement stmt = this.pf.connection.prepareStatement(
@@ -214,23 +216,23 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 stmt.setLong(3, this.pf.fileSize);
                 stmt.executeUpdate();
             } catch (SQLException ex) {
-                this.pf.logger.error("Error storing metadata for URL {}, SQLException {}", this.pf.processUrl, ex);
+                log.error("Error storing metadata for URL {}, SQLException {}", this.pf.processUrl, ex);
             }
 
             cleanupOutdatedRpsl(this.pf);
 
         } catch (IOException ex) {
-            this.pf.logger.error("Can't parse temporary file {}", this.pf.tempFile, ex);
+            log.error("Can't parse temporary file {}", this.pf.tempFile, ex);
         } catch (CompressorException ex) {
-            this.pf.logger.error("Compression error while parsing {}", this.pf.tempFile, ex);
+            log.error("Compression error while parsing {}", this.pf.tempFile, ex);
         } catch (SQLException ex) {
-            this.pf.logger.error("Failed to process file or cleanup rpsl", ex);
+            log.error("Failed to process file or cleanup rpsl", ex);
         } finally {
             try {
                 Files.delete(this.pf.tempFile);
-                this.pf.logger.info("Deleted temporary file {}", this.pf.tempFile);
+                log.info("Deleted temporary file {}", this.pf.tempFile);
             } catch (IOException e) {
-                this.pf.logger.warn("Failed to delete temporary file {}: {}", this.pf.tempFile, e.getMessage());
+                log.warn("Failed to delete temporary file {}: {}", this.pf.tempFile, e.getMessage());
             }
         }
     }
@@ -238,31 +240,31 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     @Override
     public void store(processFiles pf) {
 
-//        this.pf.logger.debug("0. line=\"{}\"\n"
+//        log.debug("0. line=\"{}\"\n"
 //                + "                                                                                      "
 //                + "   ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}",
 //                this.line, this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
         if (this.line.trim().isEmpty()) {
             initBeginBlock();
-//            this.pf.logger.debug("1. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
+//            log.debug("1. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
             return;
         } else if (this.ignoreNext) {
-//            this.pf.logger.debug("2. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
+//            log.debug("2. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
             return;
         } else if (this.linesOfBlock == 0 && isBlockAlreadyPresent()) {
             this.ignoreNext = true;
-//            this.pf.logger.debug("3. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
+//            log.debug("3. ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}", this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value);
             return;
         }
         if (this.block == null) {
-            this.pf.logger.warn("Unexpected content before first block separator, skipping: {}", this.line);
+            log.warn("Unexpected content before first block separator, skipping: {}", this.line);
             return;
         }
         this.block.append(this.line.stripTrailing());
         this.block.append("\n");
         this.linesOfBlock++;
 
-//        this.pf.logger.debug("4. line=\"{}\"\n"
+//        log.debug("4. line=\"{}\"\n"
 //                + "                                                                                      "
 //                + "   ignoreNext={}, linesOfBlock={}, beginBlock={}, key={}, value={}, block=\n{}",
 //                this.line, this.ignoreNext, this.linesOfBlock, this.beginBlock, this.key, this.value, this.block.toString());
@@ -281,18 +283,18 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     private boolean isBlockAlreadyPresent() {
         String[] parts = this.line.split("\\s+", 2);
         if (parts.length < 2) {
-            this.pf.logger.warn("Invalid RPSL line format: {}", this.line);
+            log.warn("Invalid RPSL line format: {}", this.line);
             return true;
         }
         this.key = parts[0].trim().replaceFirst(":$", "");
         this.value = parts[1].trim();
         if (this.blockCache.containsKey(this.key)) {
             if (this.blockCache.get(key).equals(this.value)) {
-                pf.logger.warn("Object {} already exists in {}", this.value, this.key);
+                log.warn("Object {} already exists in {}", this.value, this.key);
                 return true;
             }
         }
-        this.pf.logger.info("Begin new block: [{} : {}]", this.key, this.value);
+        log.info("Begin new block: [{} : {}]", this.key, this.value);
         this.blockCache.put(this.key, this.value);
         return false;
     }
@@ -324,8 +326,8 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
                 String existingShaBlock = rs.getString("shablock");
                 String shaBlock = sha512(this.block.toString());
-                this.pf.logger.debug("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
-                this.pf.logger.debug("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
+                log.debug("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
+                log.debug("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
                 if (existingShaBlock.equals(shaBlock)) {
                     // Block unchanged — still register as seen to protect from cleanup
                     this.storeTempStmt.setString(1, this.key);
@@ -334,7 +336,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                     if (++this.batchCount >= this.BATCH_SIZE) {
                         this.storeInsertStmt.executeBatch();
                         this.storeTempStmt.executeBatch();
-                        this.pf.logger.info("Executed batch of {} RPSL records", this.batchCount);
+                        log.info("Executed batch of {} RPSL records", this.batchCount);
                         this.batchCount = 0;
                     }
                     return;
@@ -344,13 +346,13 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.storeUpdateStmt.setString(2, this.key);
                 this.storeUpdateStmt.setString(3, this.value);
                 this.storeUpdateStmt.executeUpdate();
-                this.pf.logger.info("Update RPSL records for [{} : {}]", this.key, this.value);
+                log.info("Update RPSL records for [{} : {}]", this.key, this.value);
             } else {
                 this.storeInsertStmt.setString(1, this.key);
                 this.storeInsertStmt.setString(2, this.value);
                 this.storeInsertStmt.setString(3, this.block.toString());
                 this.storeInsertStmt.addBatch();
-                this.pf.logger.debug("Insert RPSL records for [{} : {}]", this.key, this.value);
+                log.debug("Insert RPSL records for [{} : {}]", this.key, this.value);
             }
 
             this.storeTempStmt.setString(1, this.key);
@@ -360,20 +362,20 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             if (++this.batchCount >= this.BATCH_SIZE) {
                 this.storeInsertStmt.executeBatch();
                 this.storeTempStmt.executeBatch();
-                this.pf.logger.info("Executed batch of {} RPSL records", this.batchCount);
+                log.info("Executed batch of {} RPSL records", this.batchCount);
                 this.batchCount = 0;
             }
 
         } catch (SQLException ex) {
-            this.pf.logger.warn("Can't add RPSL [{}:{}] to batch, SQLException {}", this.key, this.value, ex);
+            log.warn("Can't add RPSL [{}:{}] to batch, SQLException {}", this.key, this.value, ex);
         } catch (Exception ex) {
-            this.pf.logger.warn("Exception {}", ex);
+            log.warn("Exception {}", ex);
         }
     }
 
     private void cleanupOutdatedRpsl(processFiles pf) throws SQLException {
         if (this.blockCache.isEmpty()) {
-            this.pf.logger.info("No processed, skipping outdated rpsl cleanup");
+            log.info("No processed, skipping outdated rpsl cleanup");
             return;
         }
         // Iterate over distinct key types seen in this file (not individual values),
@@ -387,7 +389,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 deleteRpslStmt.setString(1, keyType);
                 int deleted = deleteRpslStmt.executeUpdate();
                 if (deleted > 0) {
-                    this.pf.logger.info("Deleted {} outdated rpsl records of type [{}]", deleted, keyType);
+                    log.info("Deleted {} outdated rpsl records of type [{}]", deleted, keyType);
                 }
             }
         }
@@ -435,7 +437,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.storeInsertTempRpslOrigin.setString(2, rpsl_originRoute);
                 this.storeInsertTempRpslOrigin.addBatch();
 
-                this.pf.logger.debug("[{}] Store RPSL origin for {} → [{} : {}]",
+                log.debug("[{}] Store RPSL origin for {} → [{} : {}]",
                         this.batchCountRpslOrigin, this.key, rpsl_originRoute, origin);
 
                 if (++this.batchCountRpslOrigin >= this.BATCH_SIZE) {
@@ -446,7 +448,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
             }
         } catch (SQLException ex) {
-            this.pf.logger.warn("Can't store RPSL origin for {} → [{} : {}]",
+            log.warn("Can't store RPSL origin for {} → [{} : {}]",
                     this.batchCountRpslOrigin, this.key, rpsl_originRoute, origins, ex);
         }
     }
@@ -464,7 +466,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 this.storeInsertTempRpslMntBy.setString(3, mntbyValue);
                 this.storeInsertTempRpslMntBy.addBatch();
 
-                this.pf.logger.debug("[{}] Store RPSL mnt-by for {} → [{} : {}]",
+                log.debug("[{}] Store RPSL mnt-by for {} → [{} : {}]",
                         this.batchCountRpslMntBy, this.key, mntbyObjectId, mntbyValue);
 
                 if (++this.batchCountRpslMntBy >= this.BATCH_SIZE) {
@@ -475,7 +477,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
             }
         } catch (SQLException ex) {
-            this.pf.logger.warn("Can't store RPSL mnt-by for {} → [{} : {}]",
+            log.warn("Can't store RPSL mnt-by for {} → [{} : {}]",
                     this.batchCountRpslMntBy, this.key, mntbyObjectId, rpsl_mntbyValues);
         }
     }
@@ -499,12 +501,12 @@ public class parseRpsl extends parseAbstract implements parseInterface {
 
             deleted = deleteRpslOrigin.executeUpdate();
             if (deleted > 0) {
-                this.pf.logger.info("Deleted {} outdated rpsl_origin", deleted);
+                log.info("Deleted {} outdated rpsl_origin", deleted);
             }
 
             deleted = deleteRpslMntBy.executeUpdate();
             if (deleted > 0) {
-                this.pf.logger.info("Deleted {} outdated rpsl_mntby", deleted);
+                log.info("Deleted {} outdated rpsl_mntby", deleted);
             }
 
         }

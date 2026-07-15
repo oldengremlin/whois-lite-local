@@ -15,7 +15,6 @@
  */
 package net.ukrcom.whoislitelocal.retrieve;
 
-import ch.qos.logback.classic.Logger;
 import inet.ipaddr.AddressStringException;
 import inet.ipaddr.IPAddress;
 import inet.ipaddr.IPAddressString;
@@ -26,6 +25,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 import static net.ukrcom.whoislitelocal.parse.parseExtended.IP2BigInteger;
 import static net.ukrcom.whoislitelocal.parse.parseExtended.IPBigIntegerWithZero;
@@ -34,17 +34,16 @@ import static net.ukrcom.whoislitelocal.parse.parseExtended.IPBigIntegerWithZero
  *
  * @author olden
  */
+@Slf4j
 public class retrieveNetworkOrigin {
 
     protected String network;
     protected String origin;
     protected String originRoute;
     protected String originBlock;
-    private final Logger logger;
 
     public retrieveNetworkOrigin(String network) {
         this.network = network;
-        this.logger = Config.getLogger();
     }
 
     public retrieveNetworkOrigin printNetworkOrigin() {
@@ -73,7 +72,7 @@ public class retrieveNetworkOrigin {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to print RouteOrigin", ex);
+            log.error("Failed to print RouteOrigin", ex);
         }
         if (networkFound) {
             return this;
@@ -99,11 +98,11 @@ public class retrieveNetworkOrigin {
                     Config.printBlock(this.originBlock);
                 }
             } catch (SQLException ex) {
-                this.logger.error("Failed to search network for RouteOrigin: {}", ipv4Address.toString(), ex);
+                log.error("Failed to search network for RouteOrigin: {}", ipv4Address.toString(), ex);
             }
 
         } catch (AddressStringException | IncompatibleAddressException | UnknownHostException ex) {
-            this.logger.error("Can't parse IP-address {}", this.network);
+            log.error("Can't parse IP-address {}", this.network);
         }
 
         return this;
@@ -122,7 +121,7 @@ public class retrieveNetworkOrigin {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve NetworkOrigin", ex);
+            log.error("Failed to retrieve NetworkOrigin", ex);
         }
         return retVal.toString();
     }

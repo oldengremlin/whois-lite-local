@@ -15,31 +15,26 @@
  */
 package net.ukrcom.whoislitelocal;
 
-import ch.qos.logback.classic.Logger;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  *
  * @author olden
  */
+@Slf4j
 public class Config {
 
-    private static final Logger logger = (Logger) LoggerFactory.getLogger(WhoisLiteLocal.class);
     private static final String DB_URL = "jdbc:sqlite:whoislitelocal.db";
 //    private static final String DB_URL = "jdbc:log4jdbc:sqlite:whoislitelocal.db";
     private static final String PROPERTIES_FILE = "whoislitelocal.properties";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final int CONNECT_TIMEOUT = 10_000; // 10 seconds
     private static final int READ_TIMEOUT = 30_000; // 30 seconds
-
-    public static Logger getLogger() {
-        return logger;
-    }
 
     public static String getDBUrl() {
         return DB_URL;
@@ -88,7 +83,7 @@ public class Config {
         try {
             if (!printedBlockHashes.add(initializeDatabase.sha512(block.strip()))) return;
         } catch (Exception e) {
-            logger.warn("SHA-512 block hash failed, falling back to full-text dedup", e);
+            log.warn("SHA-512 block hash failed, falling back to full-text dedup", e);
             if (!printedBlockHashes.add(block.strip())) return;
         }
 
