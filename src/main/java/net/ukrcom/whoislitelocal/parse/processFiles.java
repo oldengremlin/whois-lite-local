@@ -36,7 +36,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
-import org.sqlite.SQLiteConfig;
 import static net.ukrcom.whoislitelocal.initializeDatabase.registerSha512Function;
 
 /**
@@ -92,11 +91,8 @@ public class processFiles {
             return this;
         }
 
-        // Phase 3: parse + write — BEGIN IMMEDIATE prevents SQLITE_BUSY_SNAPSHOT:
-        // multiple parallel parsers queue for the write lock; busy_timeout handles the wait
-        var sqliteConfig = new SQLiteConfig();
-        sqliteConfig.setTransactionControl(SQLiteConfig.TransactionControl.IMMEDIATE);
-        try (Connection conn = sqliteConfig.createConnection(Config.getDBUrl())) {
+        // Phase 3: parse + write (own connection — used by sequential parsers like parseRpsl)
+        try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             registerSha512Function(conn);
             this.connection = conn;
             try (var stmt = conn.createStatement()) {
@@ -114,6 +110,57 @@ public class processFiles {
             }
 
             this.connection.commit();
+        }
+        return this;
+    }
+
+    public processFiles process(String paramUrls, parseInterface parseFile, Connection sharedConn) throws
+            IOException, SQLException, URISyntaxException {
+        if (paramUrls == null || paramUrls.trim().isEmpty()) {
+            log.info("No URLs configured for {}, skipping", paramUrls);
+            return this;
+        }
+        Properties props = new Properties();
+        try (InputStream input = processFiles.class.getClassLoader().getResourceAsStream(Config.getPropertiesFile())) {
+            if (input == null) {
+                throw new IOException("Configuration file not found in classpath: " + Config.getPropertiesFile());
+            }
+            props.load(input);
+        }
+        String[] urls = props.getProperty(paramUrls).split(",");
+
+        // Phase 1: check which URLs need downloading (short read-only connection)
+        List<String> toDownload = new ArrayList<>();
+        try (Connection readConn = DriverManager.getConnection(Config.getDBUrl())) {
+            try (var stmt = readConn.createStatement()) {
+                stmt.execute("PRAGMA busy_timeout = 30000");
+            }
+            for (String url : urls) {
+                this.processUrl = url.trim();
+                if (shouldDownloadFile(readConn)) {
+                    toDownload.add(this.processUrl);
+                } else {
+                    log.info("Skipping download for {}: file unchanged", url);
+                }
+            }
+        }
+
+        // Phase 2: download in parallel (no DB)
+        List<DownloadedFile> downloaded = downloadParallel(toDownload);
+
+        if (downloaded.isEmpty()) {
+            return this;
+        }
+
+        // Phase 3: parse + write using the caller-managed shared connection
+        this.connection = sharedConn;
+        for (DownloadedFile df : downloaded) {
+            this.processUrl = df.url();
+            this.tempFile = df.tempFile();
+            this.lastModified = df.lastModified();
+            this.fileSize = df.fileSize();
+            log.info("Parsing temporary file {} for {}", this.tempFile, this.processUrl);
+            parseFile.parse(this);
         }
         return this;
     }

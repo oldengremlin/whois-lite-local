@@ -73,56 +73,56 @@ public class parseAsnames extends parseAbstract implements parseInterface {
             return;
         }
 
-        // Check if ASN exists in the table
-        try (PreparedStatement selectStmt = pf.connection.prepareStatement(
-                "SELECT name, country FROM asn WHERE asn = ?")) {
-            selectStmt.setInt(1, asn);
-            ResultSet rs = selectStmt.executeQuery();
-            if (rs.next()) {
-                // ASN exists, update name and check country
-                String existingCountry = rs.getString("country");
-                String existingName = rs.getString("name");
-                boolean needUpdate = false;
-                if (existingName == null || !existingName.equalsIgnoreCase(name)) {
-                    log.warn("Name mismatch for ASN {}: database has {}, asnames has {}", asn, existingName, name);
-                    needUpdate = true;
-                }
-                if (!needUpdate && (existingCountry == null || !existingCountry.equalsIgnoreCase(country))) {
-                    log.warn("Country mismatch for ASN {}: database has {}, asnames has {}", asn, existingCountry, country);
-                    needUpdate = true;
-                }
-                if (needUpdate) {
-                    try (PreparedStatement updateStmt = pf.connection.prepareStatement(
-                            "UPDATE asn SET name = ?, country = ? WHERE asn = ?")) {
-                        updateStmt.setString(1, name);
-                        updateStmt.setString(2, country);
-                        updateStmt.setInt(3, asn);
-                        updateStmt.executeUpdate();
+        // All DB operations share the connection — synchronize to avoid concurrent access
+        synchronized (pf.connection) {
+            try (PreparedStatement selectStmt = pf.connection.prepareStatement(
+                    "SELECT name, country FROM asn WHERE asn = ?")) {
+                selectStmt.setInt(1, asn);
+                ResultSet rs = selectStmt.executeQuery();
+                if (rs.next()) {
+                    String existingCountry = rs.getString("country");
+                    String existingName = rs.getString("name");
+                    boolean needUpdate = false;
+                    if (existingName == null || !existingName.equalsIgnoreCase(name)) {
+                        log.warn("Name mismatch for ASN {}: database has {}, asnames has {}", asn, existingName, name);
+                        needUpdate = true;
+                    }
+                    if (!needUpdate && (existingCountry == null || !existingCountry.equalsIgnoreCase(country))) {
+                        log.warn("Country mismatch for ASN {}: database has {}, asnames has {}", asn, existingCountry, country);
+                        needUpdate = true;
+                    }
+                    if (needUpdate) {
+                        try (PreparedStatement updateStmt = pf.connection.prepareStatement(
+                                "UPDATE asn SET name = ?, country = ? WHERE asn = ?")) {
+                            updateStmt.setString(1, name);
+                            updateStmt.setString(2, country);
+                            updateStmt.setInt(3, asn);
+                            updateStmt.executeUpdate();
+                        } catch (SQLException ex) {
+                            log.warn("Can't update ASN {}, SQLException {}", asn, ex);
+                        }
+                    }
+                } else {
+                    String identifier = UUID.randomUUID().toString();
+                    String date = LocalDate.now().format(Config.getDateFormatter());
+                    log.warn("Adding new ASN {} from asnames, not found in database: country={}, name={}, identifier={}",
+                            asn, country, name, identifier);
+                    try (PreparedStatement insertStmt = pf.connection.prepareStatement(
+                            "INSERT INTO asn (coordinator, country, asn, date, identifier, name) VALUES (?, ?, ?, ?, ?, ?)")) {
+                        insertStmt.setString(1, "wll");
+                        insertStmt.setString(2, country);
+                        insertStmt.setInt(3, asn);
+                        insertStmt.setString(4, date);
+                        insertStmt.setString(5, identifier);
+                        insertStmt.setString(6, name);
+                        insertStmt.executeUpdate();
                     } catch (SQLException ex) {
-                        log.warn("Can't update ASN {}, SQLException {}", asn, ex);
+                        log.warn("Can't insert ASN {} [wll], SQLException {}", asn, ex);
                     }
                 }
-            } else {
-                // ASN does not exist, insert new record
-                String identifier = UUID.randomUUID().toString();
-                String date = LocalDate.now().format(Config.getDateFormatter());
-                log.warn("Adding new ASN {} from asnames, not found in database: country={}, name={}, identifier={}",
-                        asn, country, name, identifier);
-                try (PreparedStatement insertStmt = pf.connection.prepareStatement(
-                        "INSERT INTO asn (coordinator, country, asn, date, identifier, name) VALUES (?, ?, ?, ?, ?, ?)")) {
-                    insertStmt.setString(1, "wll");
-                    insertStmt.setString(2, country);
-                    insertStmt.setInt(3, asn);
-                    insertStmt.setString(4, date);
-                    insertStmt.setString(5, identifier);
-                    insertStmt.setString(6, name);
-                    insertStmt.executeUpdate();
-                } catch (SQLException ex) {
-                    log.warn("Can't insert ASN {} [wll], SQLException {}", asn, ex);
-                }
+            } catch (SQLException ex) {
+                log.error("SQLException {}", ex);
             }
-        } catch (SQLException ex) {
-            log.error("SQLException {}", ex);
         }
     }
 

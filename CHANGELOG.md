@@ -5,6 +5,16 @@
 Формат базується на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 проект дотримується [Семантичного версіонування](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-07-15
+
+### Виправлено
+- `SQLITE_BUSY_SNAPSHOT` при паралельному записі трьома парсерами: замінено три конкуруючих з'єднання на одне спільне `Connection` у `executeGetData`; DB-операції серіалізовано через `synchronized(pf.connection)`, CPU-робота (розбір рядків, IP-конвертація, `addBatch`) лишається паралельною
+- Lombok 1.18.36 не компілювався з JDK 24+ (`TypeTag::UNKNOWN`): оновлено до 1.18.42
+- Попередження `sun.misc.Unsafe::objectFieldOffset` від Lombok при компіляції: у `maven-compiler-plugin` додано `<fork>true</fork>` та `-J--sun-misc-unsafe-memory-access=allow`
+
+### Видалено
+- `src/main/resources/schema.sql` — довідковий артефакт, що ніколи не використовувався під час роботи; актуальна схема формується кодом (`initializeDatabase.java`) при першому запуску
+
 ## [1.1.0] — 2026-07-15
 
 ### Додано

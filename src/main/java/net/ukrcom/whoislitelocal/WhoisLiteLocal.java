@@ -17,6 +17,8 @@ package net.ukrcom.whoislitelocal;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -67,46 +69,54 @@ public class WhoisLiteLocal {
         try {
             new initializeDatabase().createTables();
 
-            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                Future<Void> f1 = executor.submit((Callable<Void>) () -> {
-                    new processFiles().process("urls_extended", new parseExtended());
-                    return null;
-                });
-                Future<Void> f2 = executor.submit((Callable<Void>) () -> {
-                    new processFiles().process("asnames", new parseAsnames());
-                    return null;
-                });
-                Future<Void> f3 = executor.submit((Callable<Void>) () -> {
-                    new processFiles().process("geolocations", new parseGeolocations());
-                    return null;
-                });
+            // Single shared connection for all three parallel parsers — no cross-connection lock contention
+            try (Connection sharedConn = DriverManager.getConnection(Config.getDBUrl())) {
+                try (var stmt = sharedConn.createStatement()) {
+                    stmt.execute("PRAGMA busy_timeout = 30000");
+                }
+                sharedConn.setAutoCommit(false);
 
-                try {
-                    f1.get();
-                } catch (ExecutionException e) {
-                    log.error("urls_extended processing failed", e.getCause());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("urls_extended processing interrupted", e);
+                try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                    Future<Void> f1 = executor.submit((Callable<Void>) () -> {
+                        new processFiles().process("urls_extended", new parseExtended(), sharedConn);
+                        return null;
+                    });
+                    Future<Void> f2 = executor.submit((Callable<Void>) () -> {
+                        new processFiles().process("asnames", new parseAsnames(), sharedConn);
+                        return null;
+                    });
+                    Future<Void> f3 = executor.submit((Callable<Void>) () -> {
+                        new processFiles().process("geolocations", new parseGeolocations(), sharedConn);
+                        return null;
+                    });
+
+                    try {
+                        f1.get();
+                    } catch (ExecutionException e) {
+                        log.error("urls_extended processing failed", e.getCause());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.error("urls_extended processing interrupted", e);
+                    }
+                    try {
+                        f2.get();
+                    } catch (ExecutionException e) {
+                        log.error("asnames processing failed", e.getCause());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.error("asnames processing interrupted", e);
+                    }
+                    try {
+                        f3.get();
+                    } catch (ExecutionException e) {
+                        log.error("geolocations processing failed", e.getCause());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.error("geolocations processing interrupted", e);
+                    }
                 }
 
-                try {
-                    f2.get();
-                } catch (ExecutionException e) {
-                    log.error("asnames processing failed", e.getCause());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("asnames processing interrupted", e);
-                }
-
-                try {
-                    f3.get();
-                } catch (ExecutionException e) {
-                    log.error("geolocations processing failed", e.getCause());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("geolocations processing interrupted", e);
-                }
+                sharedConn.commit();
             }
 
             new processFiles().process("ripedb", new parseRpsl());

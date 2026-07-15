@@ -53,16 +53,17 @@ public class parseAbstract implements parseInterface {
             while ((this.line = reader.readLine()) != null) {
                 store(pf);
             }
-            runIncrementalVacuumSmart(pf);
-            // Update file metadata
-            try (PreparedStatement stmt = pf.connection.prepareStatement(
-                    "INSERT OR REPLACE INTO file_metadata (url, last_modified, file_size) VALUES (?, ?, ?)")) {
-                stmt.setString(1, pf.processUrl);
-                stmt.setString(2, pf.lastModified);
-                stmt.setLong(3, pf.fileSize);
-                stmt.executeUpdate();
-            } catch (SQLException ex) {
-                log.error("Error store metadata for URL {}, SQLException {}", pf.processUrl, ex);
+            synchronized (pf.connection) {
+                runIncrementalVacuumSmart(pf);
+                try (PreparedStatement stmt = pf.connection.prepareStatement(
+                        "INSERT OR REPLACE INTO file_metadata (url, last_modified, file_size) VALUES (?, ?, ?)")) {
+                    stmt.setString(1, pf.processUrl);
+                    stmt.setString(2, pf.lastModified);
+                    stmt.setLong(3, pf.fileSize);
+                    stmt.executeUpdate();
+                } catch (SQLException ex) {
+                    log.error("Error store metadata for URL {}, SQLException {}", pf.processUrl, ex);
+                }
             }
         } catch (IOException ex) {
             log.error("Can't parsing temporary file {}", pf.tempFile);
@@ -95,6 +96,7 @@ public class parseAbstract implements parseInterface {
     }
 
     protected void runIncrementalVacuumSmart(processFiles pf) {
+        // Caller must hold synchronized(pf.connection)
         try {
             int pageCount;
             int freelistCount;
