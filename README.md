@@ -4,7 +4,7 @@
 
 ## Документація
 
-* [Структура бази даних](docs/DATABASE.md) — опис усіх таблиць, індексів, зв'язків між таблицями та приклади SQL-запитів.
+📋 [Changelog](CHANGELOG.md) · 🛠 [Contributing](CONTRIBUTING.md) · 🗄 [Структура бази даних](docs/DATABASE.md)
 
 ## Збірка
 
