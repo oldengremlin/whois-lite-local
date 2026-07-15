@@ -4,7 +4,7 @@
 
 ## Документація
 
-📋 [Changelog](CHANGELOG.md) · 🛠 [Contributing](CONTRIBUTING.md) · 🗄 [Структура бази даних](docs/DATABASE.md)
+📋 [Changelog](CHANGELOG.md) · 🛠 [Contributing](CONTRIBUTING.md) · ⛁ [Структура бази даних](docs/DATABASE.md)
 
 ## Збірка
 
