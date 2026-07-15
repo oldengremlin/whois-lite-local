@@ -45,7 +45,9 @@ import static net.ukrcom.whoislitelocal.initializeDatabase.registerSha512Functio
 @Slf4j
 public class processFiles {
 
-    private record DownloadedFile(String url, Path tempFile, String lastModified, long fileSize) {}
+    private record DownloadedFile(String url, Path tempFile, String lastModified, long fileSize) {
+
+    }
 
     protected Connection connection;
     protected String processUrl;
@@ -166,7 +168,7 @@ public class processFiles {
     }
 
     private boolean shouldDownloadFile(Connection readConn) throws SQLException, IOException,
-            URISyntaxException {
+                                                                   URISyntaxException {
         try (PreparedStatement stmt = readConn.prepareStatement(
                 "SELECT last_modified, file_size FROM file_metadata WHERE url = ?")) {
             stmt.setString(1, this.processUrl);
@@ -183,7 +185,7 @@ public class processFiles {
                 connHttp.setConnectTimeout(Config.getConnectTimeout());
                 connHttp.setReadTimeout(Config.getReadTimeout());
                 String serverLastModified = connHttp.getHeaderField("Last-Modified") != null
-                        ? connHttp.getHeaderField("Last-Modified") : "";
+                                            ? connHttp.getHeaderField("Last-Modified") : "";
                 long serverFileSize = connHttp.getContentLengthLong();
                 return !serverLastModified.equals(lastModified) || serverFileSize != fileSize;
             } finally {

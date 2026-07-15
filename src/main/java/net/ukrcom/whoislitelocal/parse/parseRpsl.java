@@ -33,7 +33,6 @@ import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import static net.ukrcom.whoislitelocal.initializeDatabase.sha512;
-import org.apache.commons.compress.compressors.CompressorException;
 
 /**
  *
@@ -296,7 +295,6 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     }
 
     private void saveBlock() {
-
 
         if (this.key == null || this.value == null || this.block == null || this.block.isEmpty()) {
             return;

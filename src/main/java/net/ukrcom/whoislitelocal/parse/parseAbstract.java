@@ -103,17 +103,23 @@ public class parseAbstract implements parseInterface {
 
             try (PreparedStatement stmt = pf.connection.prepareStatement("PRAGMA page_count");
                  ResultSet rs = stmt.executeQuery()) {
-                if (!rs.next()) return;
+                if (!rs.next()) {
+                    return;
+                }
                 pageCount = rs.getInt(1);
             }
 
             try (PreparedStatement stmt = pf.connection.prepareStatement("PRAGMA freelist_count");
                  ResultSet rs = stmt.executeQuery()) {
-                if (!rs.next()) return;
+                if (!rs.next()) {
+                    return;
+                }
                 freelistCount = rs.getInt(1);
             }
 
-            if (pageCount == 0 || freelistCount == 0) return;
+            if (pageCount == 0 || freelistCount == 0) {
+                return;
+            }
 
             double fragmentation = (double) freelistCount / pageCount;
             log.debug("freelist={}, pages={}, fragmentation={}%",

@@ -77,14 +77,20 @@ public class Config {
      *    to the next call.
      */
     public static void printBlock(String block) {
-        if (block == null || block.isEmpty()) return;
+        if (block == null || block.isEmpty()) {
+            return;
+        }
 
         // Highlander: hash the normalised block and bail if already seen
         try {
-            if (!printedBlockHashes.add(initializeDatabase.sha512(block.strip()))) return;
+            if (!printedBlockHashes.add(initializeDatabase.sha512(block.strip()))) {
+                return;
+            }
         } catch (Exception e) {
             log.warn("SHA-512 block hash failed, falling back to full-text dedup", e);
-            if (!printedBlockHashes.add(block.strip())) return;
+            if (!printedBlockHashes.add(block.strip())) {
+                return;
+            }
         }
 
         // Intra-block dedup
@@ -119,7 +125,9 @@ public class Config {
     }
 
     private static void flushAttrGroup(List<String> group, StringBuilder joinedKey, Set<String> seen) {
-        if (group.isEmpty()) return;
+        if (group.isEmpty()) {
+            return;
+        }
         if (seen.add(joinedKey.toString())) {
             group.forEach(System.out::println);
         }

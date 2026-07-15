@@ -7,7 +7,7 @@
     <packaging>jar</packaging>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>25</maven.compiler.release>
         <mainClass>net.ukrcom.whoislitelocal.WhoisLiteLocal</mainClass>
     </properties>
     <dependencies>
@@ -62,7 +62,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.15.0</version>
                 <configuration>
-                    <release>21</release>
+                    <release>25</release>
                     <fork>true</fork>
                     <compilerArgs>
                         <arg>-J--sun-misc-unsafe-memory-access=allow</arg>

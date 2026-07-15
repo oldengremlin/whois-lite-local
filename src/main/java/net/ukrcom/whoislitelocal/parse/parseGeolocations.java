@@ -54,10 +54,16 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
         } finally {
             synchronized (pf.connection) {
                 if (storeUpdateStmt != null) {
-                    try { storeUpdateStmt.close(); } catch (SQLException ignore) {}
+                    try {
+                        storeUpdateStmt.close();
+                    } catch (SQLException ignore) {
+                    }
                 }
                 if (storeInsertStmt != null) {
-                    try { storeInsertStmt.close(); } catch (SQLException ignore) {}
+                    try {
+                        storeInsertStmt.close();
+                    } catch (SQLException ignore) {
+                    }
                 }
             }
         }
@@ -126,7 +132,9 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                 storeUpdateStmt.addBatch();
                 log.info("Update GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
                 if (++batchCount == BATCH_SIZE) {
-                    synchronized (pf.connection) { storeUpdateStmt.executeBatch(); }
+                    synchronized (pf.connection) {
+                        storeUpdateStmt.executeBatch();
+                    }
                     batchCount = 0;
                 }
             } else if (doInsert) {
@@ -135,7 +143,9 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                 storeInsertStmt.addBatch();
                 log.debug("Insert GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
                 if (++batchCount == BATCH_SIZE) {
-                    synchronized (pf.connection) { storeInsertStmt.executeBatch(); }
+                    synchronized (pf.connection) {
+                        storeInsertStmt.executeBatch();
+                    }
                     batchCount = 0;
                 }
             }

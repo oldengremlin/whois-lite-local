@@ -92,10 +92,23 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         try {
             // CPU work (IP parsing, validation) happens before acquiring the lock
             switch (type) {
-                case "asn" -> { synchronized (pf.connection) { processAsn(pf, coordinator, country, value, date, identifier); } }
-                case "ipv4" -> { synchronized (pf.connection) { processIpv4(pf, coordinator, country, value, countOrPrefix, date, identifier); } }
-                case "ipv6" -> { synchronized (pf.connection) { processIpv6(pf, coordinator, country, value, countOrPrefix, date, identifier); } }
-                default -> log.warn("Unknown type: {}", type);
+                case "asn" -> {
+                    synchronized (pf.connection) {
+                        processAsn(pf, coordinator, country, value, date, identifier);
+                    }
+                }
+                case "ipv4" -> {
+                    synchronized (pf.connection) {
+                        processIpv4(pf, coordinator, country, value, countOrPrefix, date, identifier);
+                    }
+                }
+                case "ipv6" -> {
+                    synchronized (pf.connection) {
+                        processIpv6(pf, coordinator, country, value, countOrPrefix, date, identifier);
+                    }
+                }
+                default ->
+                    log.warn("Unknown type: {}", type);
             }
         } catch (NumberFormatException e) {
             log.error("Failed to process line, NumberFormatException: {}", line, e);
