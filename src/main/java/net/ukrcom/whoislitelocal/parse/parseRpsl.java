@@ -217,7 +217,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 log.error("Error storing metadata for URL {}, SQLException {}", this.pf.processUrl, ex);
             }
 
-            cleanupOutdatedRpsl(this.pf);
+            cleanupOutdatedRpsl();
             cleanupRpslOriginAndMntBy();
 
         } catch (IOException ex) {
@@ -367,7 +367,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         }
     }
 
-    private void cleanupOutdatedRpsl(processFiles pf) throws SQLException {
+    private void cleanupOutdatedRpsl() throws SQLException {
         if (this.blockCache.isEmpty()) {
             log.info("No processed, skipping outdated rpsl cleanup");
             return;
