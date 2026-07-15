@@ -36,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
+import org.sqlite.SQLiteConfig;
 import static net.ukrcom.whoislitelocal.initializeDatabase.registerSha512Function;
 
 /**
@@ -67,29 +68,42 @@ public class processFiles {
             props.load(input);
         }
         String[] urls = props.getProperty(paramUrls).split(",");
-        try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
-            registerSha512Function(conn);
-            this.connection = conn;
-            try (var pragmaStmt = conn.createStatement()) {
-                pragmaStmt.execute("PRAGMA busy_timeout = 30000");
-            }
-            this.connection.setAutoCommit(false);
 
-            // Phase 1: determine which URLs need downloading
-            List<String> toDownload = new ArrayList<>();
+        // Phase 1: determine which URLs need downloading (short read-only connection, no transaction)
+        List<String> toDownload = new ArrayList<>();
+        try (Connection readConn = DriverManager.getConnection(Config.getDBUrl())) {
+            try (var stmt = readConn.createStatement()) {
+                stmt.execute("PRAGMA busy_timeout = 30000");
+            }
             for (String url : urls) {
                 this.processUrl = url.trim();
-                if (shouldDownloadFile()) {
+                if (shouldDownloadFile(readConn)) {
                     toDownload.add(this.processUrl);
                 } else {
                     log.info("Skipping download for {}: file unchanged", url);
                 }
             }
+        }
 
-            // Phase 2: download all needed URLs in parallel
-            List<DownloadedFile> downloaded = downloadParallel(toDownload);
+        // Phase 2: download all needed URLs in parallel (no DB involvement)
+        List<DownloadedFile> downloaded = downloadParallel(toDownload);
 
-            // Phase 3: sequential parse loop
+        if (downloaded.isEmpty()) {
+            return this;
+        }
+
+        // Phase 3: parse + write — BEGIN IMMEDIATE prevents SQLITE_BUSY_SNAPSHOT:
+        // multiple parallel parsers queue for the write lock; busy_timeout handles the wait
+        var sqliteConfig = new SQLiteConfig();
+        sqliteConfig.setTransactionControl(SQLiteConfig.TransactionControl.IMMEDIATE);
+        try (Connection conn = sqliteConfig.createConnection(Config.getDBUrl())) {
+            registerSha512Function(conn);
+            this.connection = conn;
+            try (var stmt = conn.createStatement()) {
+                stmt.execute("PRAGMA busy_timeout = 30000");
+            }
+            this.connection.setAutoCommit(false);
+
             for (DownloadedFile df : downloaded) {
                 this.processUrl = df.url();
                 this.tempFile = df.tempFile();
@@ -104,9 +118,9 @@ public class processFiles {
         return this;
     }
 
-    private boolean shouldDownloadFile() throws SQLException, IOException,
+    private boolean shouldDownloadFile(Connection readConn) throws SQLException, IOException,
             URISyntaxException {
-        try (PreparedStatement stmt = this.connection.prepareStatement(
+        try (PreparedStatement stmt = readConn.prepareStatement(
                 "SELECT last_modified, file_size FROM file_metadata WHERE url = ?")) {
             stmt.setString(1, this.processUrl);
             ResultSet rs = stmt.executeQuery();
