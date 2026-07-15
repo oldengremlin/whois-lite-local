@@ -167,7 +167,6 @@ public class CommandLineParser {
     }
 
     public static void printHelp() {
-        HelpFormatter formatter = new HelpFormatter();
-        formatter.printHelp("java -jar WhoisLiteLocal-1.0.0.jar", CommandLineParser.options, true);
+        HelpFormatter.builder().get().printHelp("java -jar WhoisLiteLocal.jar", CommandLineParser.options, true);
     }
 }

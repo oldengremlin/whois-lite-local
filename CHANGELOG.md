@@ -5,6 +5,12 @@
 Формат базується на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 проект дотримується [Семантичного версіонування](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-07-15
+
+### Виправлено
+- `cleanupRpslOriginAndMntBy()` ніколи не викликався після `cleanupOutdatedRpsl()`: стала інформація про `origin` та `mnt-by` нескінченно накопичувалася в таблицях `rpsl_origin` і `rpsl_mntby` — метод існував, але виклик у `parse()` був відсутній
+- `HelpFormatter` deprecated з Commons CLI 1.8.0: замінено `new HelpFormatter()` на `HelpFormatter.builder().get()`; заодно прибрано хардкод версії з рядка довідки
+
 ## [1.1.1] — 2026-07-15
 
 ### Виправлено
