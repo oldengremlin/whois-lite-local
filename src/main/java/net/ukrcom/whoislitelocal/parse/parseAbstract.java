@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.compressors.CompressorException;
 import org.apache.commons.compress.compressors.CompressorInputStream;
 import org.apache.commons.compress.compressors.CompressorStreamFactory;
@@ -33,6 +34,7 @@ import org.apache.commons.compress.compressors.CompressorStreamFactory;
  *
  * @author olden
  */
+@Slf4j
 public class parseAbstract implements parseInterface {
 
     protected String line;
@@ -60,19 +62,19 @@ public class parseAbstract implements parseInterface {
                 stmt.setLong(3, pf.fileSize);
                 stmt.executeUpdate();
             } catch (SQLException ex) {
-                pf.logger.error("Error store metadata for URL {}, SQLException {}", pf.processUrl, ex);
+                log.error("Error store metadata for URL {}, SQLException {}", pf.processUrl, ex);
             }
         } catch (IOException ex) {
-            pf.logger.error("Can't parsing temporary file {}", pf.tempFile);
+            log.error("Can't parsing temporary file {}", pf.tempFile);
         } catch (CompressorException ex) {
-            pf.logger.error("Compression error while parsing {}", pf.tempFile, ex);
+            log.error("Compression error while parsing {}", pf.tempFile, ex);
         } finally {
             // Delete temporary file
             try {
                 Files.delete(pf.tempFile);
-                pf.logger.info("Deleted temporary file {}", pf.tempFile);
+                log.info("Deleted temporary file {}", pf.tempFile);
             } catch (IOException e) {
-                pf.logger.warn("Failed to delete temporary file {}: {}", pf.tempFile, e.getMessage());
+                log.warn("Failed to delete temporary file {}: {}", pf.tempFile, e.getMessage());
             }
         }
     }
@@ -114,20 +116,20 @@ public class parseAbstract implements parseInterface {
             if (pageCount == 0 || freelistCount == 0) return;
 
             double fragmentation = (double) freelistCount / pageCount;
-            pf.logger.debug("freelist={}, pages={}, fragmentation={}%",
+            log.debug("freelist={}, pages={}, fragmentation={}%",
                     freelistCount, pageCount, String.format("%.1f", fragmentation * 100));
 
             if (fragmentation >= VACUUM_FRAGMENTATION_THRESHOLD) {
                 try (PreparedStatement vacuumStmt = pf.connection.prepareStatement(
                         "PRAGMA incremental_vacuum(" + freelistCount + ")")) {
                     vacuumStmt.execute();
-                    pf.logger.info("Ran incremental_vacuum({}) — fragmentation was {}%",
+                    log.info("Ran incremental_vacuum({}) — fragmentation was {}%",
                             freelistCount, String.format("%.1f", fragmentation * 100));
                 }
             }
 
         } catch (SQLException e) {
-            pf.logger.warn("Failed to run incremental_vacuum: {}", e.getMessage());
+            log.warn("Failed to run incremental_vacuum: {}", e.getMessage());
         }
     }
 

@@ -20,6 +20,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 import net.ukrcom.whoislitelocal.IpUtils;
 
@@ -27,6 +28,7 @@ import net.ukrcom.whoislitelocal.IpUtils;
  *
  * @author olden
  */
+@Slf4j
 public class parseAsnames extends parseAbstract implements parseInterface {
 
     @Override
@@ -38,7 +40,7 @@ public class parseAsnames extends parseAbstract implements parseInterface {
         // Split by first space to get ASN and the rest
         String[] parts = this.line.split("\\s+", 2);
         if (parts.length < 2) {
-            pf.logger.warn("Invalid asnames line format: {}", this.line);
+            log.warn("Invalid asnames line format: {}", this.line);
             return;
         }
 
@@ -49,7 +51,7 @@ public class parseAsnames extends parseAbstract implements parseInterface {
             }
             asn = IpUtils.validateAsn(parts[0]);
         } catch (IllegalArgumentException e) {
-            pf.logger.warn("Invalid ASN in asnames line: {}", this.line, e);
+            log.warn("Invalid ASN in asnames line: {}", this.line, e);
             return;
         }
 
@@ -57,14 +59,14 @@ public class parseAsnames extends parseAbstract implements parseInterface {
         String nameAndCountry = parts[1].trim();
         int lastCommaIndex = nameAndCountry.lastIndexOf(",");
         if (lastCommaIndex == -1 || lastCommaIndex == nameAndCountry.length() - 1) {
-            pf.logger.warn("Invalid asnames line format (missing country): {}", this.line);
+            log.warn("Invalid asnames line format (missing country): {}", this.line);
             return;
         }
 
         String name = nameAndCountry.substring(0, lastCommaIndex).trim();
         String country = nameAndCountry.substring(lastCommaIndex + 1).trim();
         if (country.length() != 2) {
-            pf.logger.warn("Invalid country code in asnames line: {}", this.line);
+            log.warn("Invalid country code in asnames line: {}", this.line);
             return;
         }
         if ("ZZ".equalsIgnoreCase(country)) {
@@ -82,11 +84,11 @@ public class parseAsnames extends parseAbstract implements parseInterface {
                 String existingName = rs.getString("name");
                 boolean needUpdate = false;
                 if (existingName == null || !existingName.equalsIgnoreCase(name)) {
-                    pf.logger.warn("Name mismatch for ASN {}: database has {}, asnames has {}", asn, existingName, name);
+                    log.warn("Name mismatch for ASN {}: database has {}, asnames has {}", asn, existingName, name);
                     needUpdate = true;
                 }
                 if (!needUpdate && (existingCountry == null || !existingCountry.equalsIgnoreCase(country))) {
-                    pf.logger.warn("Country mismatch for ASN {}: database has {}, asnames has {}", asn, existingCountry, country);
+                    log.warn("Country mismatch for ASN {}: database has {}, asnames has {}", asn, existingCountry, country);
                     needUpdate = true;
                 }
                 if (needUpdate) {
@@ -97,14 +99,14 @@ public class parseAsnames extends parseAbstract implements parseInterface {
                         updateStmt.setInt(3, asn);
                         updateStmt.executeUpdate();
                     } catch (SQLException ex) {
-                        pf.logger.warn("Can't update ASN {}, SQLException {}", asn, ex);
+                        log.warn("Can't update ASN {}, SQLException {}", asn, ex);
                     }
                 }
             } else {
                 // ASN does not exist, insert new record
                 String identifier = UUID.randomUUID().toString();
                 String date = LocalDate.now().format(Config.getDateFormatter());
-                pf.logger.warn("Adding new ASN {} from asnames, not found in database: country={}, name={}, identifier={}",
+                log.warn("Adding new ASN {} from asnames, not found in database: country={}, name={}, identifier={}",
                         asn, country, name, identifier);
                 try (PreparedStatement insertStmt = pf.connection.prepareStatement(
                         "INSERT INTO asn (coordinator, country, asn, date, identifier, name) VALUES (?, ?, ?, ?, ?, ?)")) {
@@ -116,11 +118,11 @@ public class parseAsnames extends parseAbstract implements parseInterface {
                     insertStmt.setString(6, name);
                     insertStmt.executeUpdate();
                 } catch (SQLException ex) {
-                    pf.logger.warn("Can't insert ASN {} [wll], SQLException {}", asn, ex);
+                    log.warn("Can't insert ASN {} [wll], SQLException {}", asn, ex);
                 }
             }
         } catch (SQLException ex) {
-            pf.logger.error("SQLException {}", ex);
+            log.error("SQLException {}", ex);
         }
     }
 

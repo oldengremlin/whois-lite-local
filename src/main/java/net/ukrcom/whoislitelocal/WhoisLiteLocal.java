@@ -15,13 +15,19 @@
  */
 package net.ukrcom.whoislitelocal;
 
-import net.ukrcom.whoislitelocal.retrieve.*;
-import net.ukrcom.whoislitelocal.parse.*;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.sql.SQLException;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import lombok.extern.slf4j.Slf4j;
+import net.ukrcom.whoislitelocal.parse.*;
+import net.ukrcom.whoislitelocal.retrieve.*;
 import org.apache.commons.cli.ParseException;
 
+@Slf4j
 public class WhoisLiteLocal {
 
     public static void main(String[] args) {
@@ -60,18 +66,59 @@ public class WhoisLiteLocal {
         long startTime = System.currentTimeMillis();
         try {
             new initializeDatabase().createTables();
-            new processFiles().process("urls_extended", new parseExtended());
-            new processFiles().process("asnames", new parseAsnames());
-            new processFiles().process("geolocations", new parseGeolocations());
+
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                Future<Void> f1 = executor.submit((Callable<Void>) () -> {
+                    new processFiles().process("urls_extended", new parseExtended());
+                    return null;
+                });
+                Future<Void> f2 = executor.submit((Callable<Void>) () -> {
+                    new processFiles().process("asnames", new parseAsnames());
+                    return null;
+                });
+                Future<Void> f3 = executor.submit((Callable<Void>) () -> {
+                    new processFiles().process("geolocations", new parseGeolocations());
+                    return null;
+                });
+
+                try {
+                    f1.get();
+                } catch (ExecutionException e) {
+                    log.error("urls_extended processing failed", e.getCause());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("urls_extended processing interrupted", e);
+                }
+
+                try {
+                    f2.get();
+                } catch (ExecutionException e) {
+                    log.error("asnames processing failed", e.getCause());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("asnames processing interrupted", e);
+                }
+
+                try {
+                    f3.get();
+                } catch (ExecutionException e) {
+                    log.error("geolocations processing failed", e.getCause());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("geolocations processing interrupted", e);
+                }
+            }
+
             new processFiles().process("ripedb", new parseRpsl());
+
         } catch (IOException e) {
-            Config.getLogger().error("Main process (IOException)", e);
+            log.error("Main process (IOException)", e);
         } catch (SQLException e) {
-            Config.getLogger().error("Main process (SQLException)", e);
+            log.error("Main process (SQLException)", e);
         } catch (URISyntaxException e) {
-            Config.getLogger().error("Main process (URISyntaxException)", e);
+            log.error("Main process (URISyntaxException)", e);
         } finally {
-            Config.getLogger().info("executeGetData completed in {} ms", System.currentTimeMillis() - startTime);
+            log.info("executeGetData completed in {} ms", System.currentTimeMillis() - startTime);
         }
     }
 

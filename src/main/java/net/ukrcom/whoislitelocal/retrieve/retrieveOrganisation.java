@@ -20,12 +20,14 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
 /**
  *
  * @author olden
  */
+@Slf4j
 public class retrieveOrganisation extends retrieveAutNum {
 
     public retrieveOrganisation(String autNum) {
@@ -46,7 +48,7 @@ public class retrieveOrganisation extends retrieveAutNum {
             }
 
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AutNum for Organisation", ex);
+            log.error("Failed to retrieve AutNum for Organisation", ex);
         }
         return this;
     }

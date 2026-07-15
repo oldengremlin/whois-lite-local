@@ -15,28 +15,27 @@
  */
 package net.ukrcom.whoislitelocal.retrieve;
 
-import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
 /**
  *
  * @author olden
  */
+@Slf4j
 public class retrieveRouteOrigin {
 
     protected String origin;
     protected String originRoute;
     protected String originBlock;
-    private final Logger logger;
 
     public retrieveRouteOrigin(String origin) {
         this.origin = origin;
-        this.logger = Config.getLogger();
     }
 
     public retrieveRouteOrigin printRouteOrigin() {
@@ -52,7 +51,7 @@ public class retrieveRouteOrigin {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to print RouteOrigin", ex);
+            log.error("Failed to print RouteOrigin", ex);
         }
         return this;
     }
@@ -70,7 +69,7 @@ public class retrieveRouteOrigin {
                 }
             }
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve RouteOrigin", ex);
+            log.error("Failed to retrieve RouteOrigin", ex);
         }
         return retVal.toString();
     }

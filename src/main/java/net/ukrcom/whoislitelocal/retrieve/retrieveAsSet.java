@@ -15,27 +15,26 @@
  */
 package net.ukrcom.whoislitelocal.retrieve;
 
-import ch.qos.logback.classic.Logger;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
 /**
  *
  * @author olden
  */
+@Slf4j
 public class retrieveAsSet {
 
     protected String asSet;
     protected String asSetBlock;
-    private final Logger logger;
 
     public retrieveAsSet(String asSet) {
         this.asSet = asSet;
-        this.logger = Config.getLogger();
     }
 
     public retrieveAsSet printAsSet() {
@@ -51,7 +50,7 @@ public class retrieveAsSet {
             }
 
         } catch (SQLException ex) {
-            this.logger.error("Failed to retrieve AsSet", ex);
+            log.error("Failed to retrieve AsSet", ex);
         }
         return this;
     }

@@ -15,7 +15,6 @@
  */
 package net.ukrcom.whoislitelocal;
 
-import ch.qos.logback.classic.Logger;
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -24,22 +23,22 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.extern.slf4j.Slf4j;
 import org.sqlite.Function;
 
 /**
  *
  * @author olden
  */
+@Slf4j
 public class initializeDatabase {
-
-    private final Logger logger;
-
-    initializeDatabase() {
-        this.logger = Config.getLogger();
-    }
 
     public initializeDatabase createTables() throws SQLException {
         try (Connection connSQLite = DriverManager.getConnection(Config.getDBUrl())) {
+            try (var pragmaStmt = connSQLite.createStatement()) {
+                pragmaStmt.execute("PRAGMA journal_mode = WAL");
+                pragmaStmt.execute("PRAGMA busy_timeout = 30000");
+            }
             connSQLite.setAutoCommit(false);
             try (var stmt = connSQLite.createStatement()) {
                 stmt.execute("PRAGMA auto_vacuum = INCREMENTAL");
@@ -125,72 +124,72 @@ public class initializeDatabase {
                     ResultSet rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_asn_asn' ON 'asn' ('asn')");
-                        logger.info("Created index idx_asn_asn on asn table");
+                        log.info("Created index idx_asn_asn on asn table");
                     } else {
-                        logger.info("Index idx_asn_asn already exists, skipping creation");
+                        log.info("Index idx_asn_asn already exists, skipping creation");
                     }
                     // Index idx_ipv4_coordinator_identifier
                     checkStmt.setString(1, "idx_ipv4_coordinator_identifier");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_ipv4_coordinator_identifier' ON 'ipv4' ('coordinator', 'identifier')");
-                        logger.info("Created index idx_ipv4_coordinator_identifier on ipv4 table");
+                        log.info("Created index idx_ipv4_coordinator_identifier on ipv4 table");
                     } else {
-                        logger.info("Index idx_ipv4_coordinator_identifier already exists, skipping creation");
+                        log.info("Index idx_ipv4_coordinator_identifier already exists, skipping creation");
                     }
                     // Index idx_ipv4_firstip
                     checkStmt.setString(1, "idx_ipv4_firstip");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_ipv4_firstip' ON 'ipv4' ('firstip')");
-                        logger.info("Created index idx_ipv4_firstip on ipv4 table");
+                        log.info("Created index idx_ipv4_firstip on ipv4 table");
                     } else {
-                        logger.info("Index idx_ipv4_firstip already exists, skipping creation");
+                        log.info("Index idx_ipv4_firstip already exists, skipping creation");
                     }
                     // Index idx_ipv4_lastip
                     checkStmt.setString(1, "idx_ipv4_lastip");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_ipv4_lastip' ON 'ipv4' ('lastip')");
-                        logger.info("Created index idx_ipv4_lastip on ipv4 table");
+                        log.info("Created index idx_ipv4_lastip on ipv4 table");
                     } else {
-                        logger.info("Index idx_ipv4_lastip already exists, skipping creation");
+                        log.info("Index idx_ipv4_lastip already exists, skipping creation");
                     }
                     // Index idx_ipv6_coordinator_identifier
                     checkStmt.setString(1, "idx_ipv6_coordinator_identifier");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_ipv6_coordinator_identifier' ON 'ipv6' ('coordinator', 'identifier')");
-                        logger.info("Created index idx_ipv6_coordinator_identifier on ipv6 table");
+                        log.info("Created index idx_ipv6_coordinator_identifier on ipv6 table");
                     } else {
-                        logger.info("Index idx_ipv6_coordinator_identifier already exists, skipping creation");
+                        log.info("Index idx_ipv6_coordinator_identifier already exists, skipping creation");
                     }
                     // Index idx_ipv6_firstip
                     checkStmt.setString(1, "idx_ipv6_firstip");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_ipv6_firstip' ON 'ipv6' ('firstip')");
-                        logger.info("Created index idx_ipv6_firstip on ipv4 table");
+                        log.info("Created index idx_ipv6_firstip on ipv4 table");
                     } else {
-                        logger.info("Index idx_ipv6_firstip already exists, skipping creation");
+                        log.info("Index idx_ipv6_firstip already exists, skipping creation");
                     }
                     // Index idx_ipv6_lastip
                     checkStmt.setString(1, "idx_ipv6_lastip");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_ipv6_lastip' ON 'ipv6' ('lastip')");
-                        logger.info("Created index idx_ipv6_lastip on ipv6 table");
+                        log.info("Created index idx_ipv6_lastip on ipv6 table");
                     } else {
-                        logger.info("Index idx_ipv6_lastip already exists, skipping creation");
+                        log.info("Index idx_ipv6_lastip already exists, skipping creation");
                     }
                     // Index idx_rpsl_kv
                     checkStmt.setString(1, "idx_rpsl_kv");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_rpsl_kv' ON 'rpsl' ('key','value')");
-                        logger.info("Created index idx_rpsl_kv on rpsl table");
+                        log.info("Created index idx_rpsl_kv on rpsl table");
                     } else {
-                        logger.info("Index idx_rpsl_kv already exists, skipping creation");
+                        log.info("Index idx_rpsl_kv already exists, skipping creation");
                     }
                     // Index idx_rpsl_origin
 /*
@@ -198,9 +197,9 @@ public class initializeDatabase {
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_rpsl_origin' ON 'rpsl_origin' ('origin')");
-                        logger.info("Created index idx_rpsl_origin on rpsl table");
+                        log.info("Created index idx_rpsl_origin on rpsl table");
                     } else {
-                        logger.info("Index idx_rpsl_origin already exists, skipping creation");
+                        log.info("Index idx_rpsl_origin already exists, skipping creation");
                     }
                      */
                     // Index idx_rpsl_mntby
@@ -209,17 +208,17 @@ public class initializeDatabase {
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
                         stmt.execute("CREATE INDEX 'idx_rpsl_mntby' ON 'rpsl_mntby' ('mntby')");
-                        logger.info("Created index idx_rpsl_mntby on rpsl table");
+                        log.info("Created index idx_rpsl_mntby on rpsl table");
                     } else {
-                        logger.info("Index idx_rpsl_mntby already exists, skipping creation");
+                        log.info("Index idx_rpsl_mntby already exists, skipping creation");
                     }
                      */
                 }
                 connSQLite.commit();
-                logger.info("Database initialized");
+                log.info("Database initialized");
             } catch (SQLException e) {
                 connSQLite.rollback();
-                logger.error("Failed to initialize database", e);
+                log.error("Failed to initialize database", e);
                 throw e;
             }
         }
