@@ -36,22 +36,28 @@ public class retrieveSearchRpslObject {
 
     private final String pattern;
     private final Pattern javaPattern;
+    private final boolean useRegexp;
 
     public retrieveSearchRpslObject(String pattern) {
         this.pattern = pattern;
+        boolean regexp = true;
         Pattern compiled;
         try {
             compiled = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE);
         } catch (PatternSyntaxException e) {
-            log.warn("Invalid regex '{}', using literal match: {}", pattern, e.getMessage());
-            compiled = Pattern.compile(Pattern.quote(pattern), Pattern.CASE_INSENSITIVE);
+            log.warn("Invalid regex '{}', falling back to literal LIKE search: {}", pattern, e.getMessage());
+            compiled = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE | Pattern.LITERAL);
+            regexp = false;
         }
         this.javaPattern = compiled;
+        this.useRegexp = regexp;
     }
 
     public retrieveSearchRpslObject search() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
-            registerRegexpFunction(conn);
+            if (useRegexp) {
+                registerRegexpFunction(conn);
+            }
             searchAsn(conn);
             searchRpsl(conn);
         } catch (SQLException ex) {
@@ -61,9 +67,11 @@ public class retrieveSearchRpslObject {
     }
 
     private void searchAsn(Connection conn) throws SQLException {
-        try (PreparedStatement stmt = conn.prepareStatement(
-                "SELECT asn, name FROM asn WHERE name REGEXP ?")) {
-            stmt.setString(1, pattern);
+        String sql = useRegexp
+                ? "SELECT asn, name FROM asn WHERE name REGEXP ?"
+                : "SELECT asn, name FROM asn WHERE name LIKE ?";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, useRegexp ? pattern : "%" + pattern + "%");
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
                 System.out.println("aut-num:        AS" + rs.getInt("asn"));
@@ -74,9 +82,11 @@ public class retrieveSearchRpslObject {
     }
 
     private void searchRpsl(Connection conn) throws SQLException {
-        try (PreparedStatement stmt = conn.prepareStatement(
-                "SELECT block FROM rpsl WHERE block REGEXP ?")) {
-            stmt.setString(1, pattern);
+        String sql = useRegexp
+                ? "SELECT block FROM rpsl WHERE block REGEXP ?"
+                : "SELECT block FROM rpsl WHERE block LIKE ?";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, useRegexp ? pattern : "%" + pattern + "%");
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
                 printResult(rs.getString("block"));
