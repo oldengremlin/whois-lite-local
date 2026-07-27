@@ -54,6 +54,8 @@ public class WhoisLiteLocal {
                 executeRouteOrigin(parser.getRouteOrigin());
             } else if (parser.isNetworkOrigin()) {
                 executeNetworkOrigin(parser.getNetworkOrigin());
+            } else if (parser.isSearchRpslObject()) {
+                executeSearchRpslObject(parser.getSearchRpslObject());
             } else if (parser.isVacuum()) {
                 executeVacuum();
             } else {
@@ -136,6 +138,10 @@ public class WhoisLiteLocal {
         } finally {
             log.info("executeGetData completed in {} ms", System.currentTimeMillis() - startTime);
         }
+    }
+
+    private static void executeSearchRpslObject(String pattern) {
+        new retrieveSearchRpslObject(pattern).search();
     }
 
     private static void executeVacuum() {

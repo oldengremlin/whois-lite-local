@@ -61,6 +61,8 @@ java -jar WhoisLiteLocal-1.0.0.jar [options]
 | `--retrieve-organisation` | `-ro` | `<as-num>` | Отримати інформацію про організацію для вказаного aut-num |
 | `--retrieve-route-origin` | `-rro` | `<AS-num>` | Отримати route/route6 об'єкти із вказаним origin |
 | `--retrieve-network-origin` | `-rno` | `<net-num>` | Отримати route/route6 об'єкти для вказаної мережі |
+| `--search-rpsl-object` | `-sro` | `<pattern>` | Повнотекстовий пошук по RPSL-об'єктах за шаблоном або regex (case-insensitive) |
+| `--vacuum` | `-vc` | — | Виконати повний VACUUM SQLite (після `--get-data` або окремо) |
 | `--help` | `-h` | — | Показати довідку |
 
 ## Алгоритм роботи

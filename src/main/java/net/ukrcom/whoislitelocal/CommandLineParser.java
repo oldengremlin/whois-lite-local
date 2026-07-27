@@ -86,6 +86,13 @@ public class CommandLineParser {
                             .build()
             )
             .addOption(
+                    Option.builder("sro").longOpt("search-rpsl-object")
+                            .hasArg()
+                            .argName("pattern")
+                            .desc("Search RPSL objects by pattern or regular expression (case-insensitive)")
+                            .build()
+            )
+            .addOption(
                     Option.builder("vc").longOpt("vacuum")
                             .desc("Run full VACUUM to compact the database (can be combined with --get-data or used standalone)")
                             .build()
@@ -169,6 +176,14 @@ public class CommandLineParser {
 
     public String getNetworkOrigin() {
         return checkValue(cmd.getOptionValue("retrieve-network-origin"));
+    }
+
+    public boolean isSearchRpslObject() {
+        return cmd.hasOption("search-rpsl-object");
+    }
+
+    public String getSearchRpslObject() {
+        return checkValue(cmd.getOptionValue("search-rpsl-object"));
     }
 
     public boolean isVacuum() {
