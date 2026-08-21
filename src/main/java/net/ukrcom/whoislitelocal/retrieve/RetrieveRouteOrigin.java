@@ -20,6 +20,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
@@ -28,13 +29,10 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
+@RequiredArgsConstructor
 public class RetrieveRouteOrigin {
 
-    protected String origin;
-
-    public RetrieveRouteOrigin(String origin) {
-        this.origin = origin;
-    }
+    protected final String origin;
 
     /**
      * Prints every route/route6 object announced by this origin. A single join

@@ -20,6 +20,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
@@ -28,13 +29,10 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
+@RequiredArgsConstructor
 public class RetrieveMntner {
 
-    protected String mntner;
-
-    public RetrieveMntner(String mntBy) {
-        this.mntner = mntBy;
-    }
+    protected final String mntner;
 
     public RetrieveMntner printMntner() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());

@@ -24,6 +24,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class IpUtils {
 
+    private IpUtils() {
+    }
+
     /**
      * Перетворює IPv4 адресу та кількість адрес у CIDR-нотацію (наприклад,
      * 212.90.160.0, 8192 -> 212.90.160.0/19).
