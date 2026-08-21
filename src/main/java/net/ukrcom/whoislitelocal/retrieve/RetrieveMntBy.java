@@ -20,6 +20,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
@@ -28,13 +29,10 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
+@RequiredArgsConstructor
 public class RetrieveMntBy {
 
-    protected String mntBy;
-
-    public RetrieveMntBy(String mntBy) {
-        this.mntBy = mntBy;
-    }
+    protected final String mntBy;
 
     /**
      * Prints the aut-num and as-set objects held by this maintainer. One join

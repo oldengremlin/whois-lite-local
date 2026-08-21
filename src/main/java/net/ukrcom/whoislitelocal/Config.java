@@ -30,6 +30,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class Config {
 
+    private Config() {
+    }
+
     private static final String DB_URL = "jdbc:sqlite:whoislitelocal.db";
     private static final String PROPERTIES_FILE = "whoislitelocal.properties";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
