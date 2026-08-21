@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.ukr-com</groupId>
     <artifactId>WhoisLiteLocal</artifactId>
-    <version>1.1.5</version>
+    <version>1.2.0</version>
     <packaging>jar</packaging>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -63,10 +63,6 @@
                 <version>3.15.0</version>
                 <configuration>
                     <release>21</release>
-                    <fork>true</fork>
-                    <compilerArgs>
-                        <arg>-J--sun-misc-unsafe-memory-access=allow</arg>
-                    </compilerArgs>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
@@ -108,4 +104,33 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <!--
+            Lombok reaches sun.misc.Unsafe, which JDK 24+ reports as a terminally
+            deprecated memory-access operation (JEP 471). Silencing it needs a JVM
+            flag on the compiler process, and that flag does not exist before JDK 24 —
+            passing it unconditionally makes the build fail on JDK 21-23. The profile
+            activates only where the flag is understood.
+        -->
+        <profile>
+            <id>suppress-unsafe-warning</id>
+            <activation>
+                <jdk>[24,)</jdk>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <fork>true</fork>
+                            <compilerArgs>
+                                <arg>-J--sun-misc-unsafe-memory-access=allow</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

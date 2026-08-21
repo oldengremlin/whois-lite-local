@@ -15,7 +15,7 @@
  */
 package net.ukrcom.whoislitelocal;
 
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
@@ -23,6 +23,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HexFormat;
 import lombok.extern.slf4j.Slf4j;
 import org.sqlite.Function;
 
@@ -35,14 +36,9 @@ public class initializeDatabase {
 
     public initializeDatabase createTables() throws SQLException {
         try (Connection connSQLite = DriverManager.getConnection(Config.getDBUrl())) {
-            try (var pragmaStmt = connSQLite.createStatement()) {
-                pragmaStmt.execute("PRAGMA journal_mode = WAL");
-                pragmaStmt.execute("PRAGMA busy_timeout = 30000");
-            }
+            configurePragmas(connSQLite);
             connSQLite.setAutoCommit(false);
             try (var stmt = connSQLite.createStatement()) {
-                stmt.execute("PRAGMA auto_vacuum = INCREMENTAL");
-//                stmt.execute("VACUUM");
                 // Create tables
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS asn (
@@ -92,6 +88,7 @@ public class initializeDatabase {
                         key TEXT NOT NULL,
                         value TEXT NOT NULL COLLATE NOCASE,
                         block TEXT NOT NULL,
+                        block_sha512 TEXT,
                         UNIQUE(key, value)
                     )""");
                 stmt.execute("""
@@ -182,38 +179,19 @@ public class initializeDatabase {
                     } else {
                         log.info("Index idx_ipv6_lastip already exists, skipping creation");
                     }
-                    // Index idx_rpsl_kv
-                    checkStmt.setString(1, "idx_rpsl_kv");
-                    rs = checkStmt.executeQuery();
-                    if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_rpsl_kv' ON 'rpsl' ('key','value')");
-                        log.info("Created index idx_rpsl_kv on rpsl table");
-                    } else {
-                        log.info("Index idx_rpsl_kv already exists, skipping creation");
-                    }
-                    // Index idx_rpsl_origin
-/*
-                    checkStmt.setString(1, "idx_rpsl_origin");
-                    rs = checkStmt.executeQuery();
-                    if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_rpsl_origin' ON 'rpsl_origin' ('origin')");
-                        log.info("Created index idx_rpsl_origin on rpsl table");
-                    } else {
-                        log.info("Index idx_rpsl_origin already exists, skipping creation");
-                    }
-                     */
-                    // Index idx_rpsl_mntby
-/*
-                    checkStmt.setString(1, "idx_rpsl_mntby");
-                    rs = checkStmt.executeQuery();
-                    if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_rpsl_mntby' ON 'rpsl_mntby' ('mntby')");
-                        log.info("Created index idx_rpsl_mntby on rpsl table");
-                    } else {
-                        log.info("Index idx_rpsl_mntby already exists, skipping creation");
-                    }
-                     */
+                    // No index on rpsl(key, value): UNIQUE(key, value) already creates
+                    // sqlite_autoindex_rpsl_1 on exactly those columns, and the query
+                    // planner uses it. A separate idx_rpsl_kv was an exact duplicate —
+                    // it is dropped below.
+                    //
+                    // No index on rpsl_origin(origin) or rpsl_mntby(mntby) either:
+                    // UNIQUE(origin, route) and UNIQUE(mntby, key, value) already serve
+                    // those lookups as covering indexes on their leading columns.
                 }
+
+                dropRedundantIndexes(stmt);
+                migrateRpslBlockHash(stmt);
+
                 connSQLite.commit();
                 log.info("Database initialized");
             } catch (SQLException e) {
@@ -221,8 +199,97 @@ public class initializeDatabase {
                 log.error("Failed to initialize database", e);
                 throw e;
             }
+
+            // Runs in its own transaction, after the schema is committed
+            backfillRpslBlockHash(connSQLite);
         }
         return this;
+    }
+
+    /**
+     * Applies connection-level pragmas. Must run while the connection is still
+     * in autocommit mode: SQLite refuses to change auto_vacuum inside a
+     * transaction, and on a database that was created without it the setting
+     * only takes effect after a full VACUUM.
+     */
+    private void configurePragmas(Connection conn) throws SQLException {
+        try (var stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA journal_mode = WAL");
+            stmt.execute("PRAGMA busy_timeout = 30000");
+            stmt.execute("PRAGMA auto_vacuum = INCREMENTAL");
+            try (ResultSet rs = stmt.executeQuery("PRAGMA auto_vacuum")) {
+                int mode = rs.next() ? rs.getInt(1) : -1;
+                if (mode == 2) {
+                    log.info("auto_vacuum = INCREMENTAL");
+                } else {
+                    log.warn("auto_vacuum = {} (expected 2 = INCREMENTAL). This database was created "
+                            + "without incremental auto-vacuum, so PRAGMA incremental_vacuum does nothing. "
+                            + "Run once with --vacuum to rebuild the file and enable it.", mode);
+                }
+            }
+        }
+    }
+
+    /**
+     * Drops indexes that duplicate an implicit UNIQUE index. Space is returned
+     * to the file only after a VACUUM.
+     */
+    private void dropRedundantIndexes(java.sql.Statement stmt) throws SQLException {
+        try (ResultSet rs = stmt.executeQuery(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_rpsl_kv'")) {
+            if (!rs.next()) {
+                return;
+            }
+        }
+        stmt.execute("DROP INDEX IF EXISTS idx_rpsl_kv");
+        log.info("Dropped redundant index idx_rpsl_kv (duplicated UNIQUE(key, value)); "
+                + "run --vacuum to reclaim the space");
+    }
+
+    /**
+     * Adds rpsl.block_sha512 to databases created before the column existed.
+     * The column caches the block hash so that change detection no longer has
+     * to read and hash the whole block on every run.
+     */
+    private void migrateRpslBlockHash(java.sql.Statement stmt) throws SQLException {
+        try (ResultSet rs = stmt.executeQuery("PRAGMA table_info(rpsl)")) {
+            while (rs.next()) {
+                if ("block_sha512".equalsIgnoreCase(rs.getString("name"))) {
+                    return;
+                }
+            }
+        }
+        stmt.execute("ALTER TABLE rpsl ADD COLUMN block_sha512 TEXT");
+        log.info("Added column rpsl.block_sha512");
+    }
+
+    /**
+     * Fills block_sha512 for rows that predate the column. One-time cost on an
+     * existing database; a no-op on every run after that.
+     */
+    private void backfillRpslBlockHash(Connection conn) throws SQLException {
+        conn.setAutoCommit(false);
+        registerSha512Function(conn);
+        try (var stmt = conn.createStatement()) {
+            int pending;
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM rpsl WHERE block_sha512 IS NULL")) {
+                pending = rs.next() ? rs.getInt(1) : 0;
+            }
+            if (pending == 0) {
+                return;
+            }
+            log.info("Backfilling block_sha512 for {} rpsl records (one-time migration, this may take a while)...",
+                    pending);
+            long startTime = System.currentTimeMillis();
+            int updated = stmt.executeUpdate(
+                    "UPDATE rpsl SET block_sha512 = sha512(block) WHERE block_sha512 IS NULL");
+            conn.commit();
+            log.info("Backfilled {} rpsl records in {} ms", updated, System.currentTimeMillis() - startTime);
+        } catch (SQLException e) {
+            conn.rollback();
+            log.error("Failed to backfill rpsl.block_sha512", e);
+            throw e;
+        }
     }
 
     public static void registerSha512Function(Connection conn) throws
@@ -236,13 +303,9 @@ public class initializeDatabase {
                 try {
                     String input = value_text(0);
                     MessageDigest md = MessageDigest.getInstance("SHA-512");
-                    byte[] hash = md.digest(input.getBytes("UTF-8"));
-                    StringBuilder hex = new StringBuilder();
-                    for (byte b : hash) {
-                        hex.append(String.format("%02x", b));
-                    }
-                    result(hex.toString());
-                } catch (UnsupportedEncodingException | NoSuchAlgorithmException | SQLException e) {
+                    byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+                    result(HexFormat.of().formatHex(hash));
+                } catch (NoSuchAlgorithmException | SQLException e) {
                     throw new SQLException("SQL SHA-512 error", e);
                 }
             }
@@ -252,12 +315,8 @@ public class initializeDatabase {
     public static String sha512(String input) throws Exception {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-512");
-            byte[] hash = md.digest(input.getBytes("UTF-8"));
-            StringBuilder hex = new StringBuilder();
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException ex) {
             throw new Exception("SHA-512 error", ex);
         }

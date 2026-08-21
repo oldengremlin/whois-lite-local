@@ -36,7 +36,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
-import static net.ukrcom.whoislitelocal.initializeDatabase.registerSha512Function;
 
 /**
  *
@@ -57,18 +56,10 @@ public class processFiles {
 
     public processFiles process(String paramUrls, parseInterface parseFile) throws
             IOException, SQLException, URISyntaxException {
-        if (paramUrls == null || paramUrls.trim().isEmpty()) {
-            log.info("No URLs configured for {}, skipping", paramUrls);
+        String[] urls = readUrls(paramUrls);
+        if (urls.length == 0) {
             return this;
         }
-        Properties props = new Properties();
-        try (InputStream input = processFiles.class.getClassLoader().getResourceAsStream(Config.getPropertiesFile())) {
-            if (input == null) {
-                throw new IOException("Configuration file not found in classpath: " + Config.getPropertiesFile());
-            }
-            props.load(input);
-        }
-        String[] urls = props.getProperty(paramUrls).split(",");
 
         // Phase 1: determine which URLs need downloading (short read-only connection, no transaction)
         List<String> toDownload = new ArrayList<>();
@@ -95,7 +86,6 @@ public class processFiles {
 
         // Phase 3: parse + write (own connection — used by sequential parsers like parseRpsl)
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
-            registerSha512Function(conn);
             this.connection = conn;
             try (var stmt = conn.createStatement()) {
                 stmt.execute("PRAGMA busy_timeout = 30000");
@@ -118,18 +108,10 @@ public class processFiles {
 
     public processFiles process(String paramUrls, parseInterface parseFile, Connection sharedConn) throws
             IOException, SQLException, URISyntaxException {
-        if (paramUrls == null || paramUrls.trim().isEmpty()) {
-            log.info("No URLs configured for {}, skipping", paramUrls);
+        String[] urls = readUrls(paramUrls);
+        if (urls.length == 0) {
             return this;
         }
-        Properties props = new Properties();
-        try (InputStream input = processFiles.class.getClassLoader().getResourceAsStream(Config.getPropertiesFile())) {
-            if (input == null) {
-                throw new IOException("Configuration file not found in classpath: " + Config.getPropertiesFile());
-            }
-            props.load(input);
-        }
-        String[] urls = props.getProperty(paramUrls).split(",");
 
         // Phase 1: check which URLs need downloading (short read-only connection)
         List<String> toDownload = new ArrayList<>();
@@ -165,6 +147,27 @@ public class processFiles {
             parseFile.parse(this);
         }
         return this;
+    }
+
+    /**
+     * Reads the URL list for one property key. Returns an empty array — never
+     * null — when the key is absent or blank, so a partially filled properties
+     * file skips that group instead of failing.
+     */
+    private String[] readUrls(String paramUrls) throws IOException {
+        Properties props = new Properties();
+        try (InputStream input = processFiles.class.getClassLoader().getResourceAsStream(Config.getPropertiesFile())) {
+            if (input == null) {
+                throw new IOException("Configuration file not found in classpath: " + Config.getPropertiesFile());
+            }
+            props.load(input);
+        }
+        String raw = props.getProperty(paramUrls);
+        if (raw == null || raw.isBlank()) {
+            log.info("No URLs configured for {}, skipping", paramUrls);
+            return new String[0];
+        }
+        return raw.split(",");
     }
 
     private boolean shouldDownloadFile(Connection readConn) throws SQLException, IOException,

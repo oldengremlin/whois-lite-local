@@ -149,8 +149,17 @@ public class WhoisLiteLocal {
         log.info("Running full VACUUM...");
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
              var stmt = conn.createStatement()) {
+            // On a database created without incremental auto-vacuum, the mode only
+            // changes when VACUUM rebuilds the file on the same connection that set
+            // the pragma — so it has to be set here, not just at initialization.
+            stmt.execute("PRAGMA auto_vacuum = INCREMENTAL");
             stmt.execute("VACUUM");
             log.info("VACUUM completed in {} ms", System.currentTimeMillis() - startTime);
+            try (var rs = stmt.executeQuery("PRAGMA auto_vacuum")) {
+                if (rs.next() && rs.getInt(1) != 2) {
+                    log.warn("auto_vacuum is still {} after VACUUM", rs.getInt(1));
+                }
+            }
         } catch (SQLException e) {
             log.error("VACUUM failed", e);
         }

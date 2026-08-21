@@ -65,6 +65,28 @@ java -jar WhoisLiteLocal-1.0.0.jar [options]
 | `--vacuum` | `-vc` | — | Виконати повний VACUUM SQLite (після `--get-data` або окремо) |
 | `--help` | `-h` | — | Показати довідку |
 
+## Оновлення з версій до 1.2.0
+
+Схема бази змінилася — до таблиці `rpsl` додано колонку `block_sha512`, у якій кешується хеш блоку. **Видаляти чи перестворювати базу не потрібно**: міграція виконується автоматично при першому запуску `--get-data`.
+
+Що відбудеться один раз:
+
+```
+Added column rpsl.block_sha512
+Dropped redundant index idx_rpsl_kv (duplicated UNIQUE(key, value))
+Backfilling block_sha512 for N rpsl records (one-time migration, this may take a while)...
+```
+
+Заповнення хешів для бази ~1 ГБ триває помітний час і більше не повторюється.
+
+Якщо в лозі з'явиться попередження про `auto_vacuum`, виконайте один раз:
+
+```bash
+java -jar WhoisLiteLocal.jar --vacuum
+```
+
+Це перебудує файл, увімкне інкрементальний auto-vacuum і поверне місце від видаленого індексу.
+
 ## Алгоритм роботи
 
 ```mermaid

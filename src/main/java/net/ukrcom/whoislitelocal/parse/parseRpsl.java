@@ -152,11 +152,11 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             this.blockCache.clear();
 
             try (PreparedStatement selectStmt = this.pf.connection.prepareStatement(
-                    "SELECT sha512(block) AS shablock FROM rpsl WHERE key=? AND value=?");
+                    "SELECT block_sha512 FROM rpsl WHERE key=? AND value=?");
                  PreparedStatement updateStmt = this.pf.connection.prepareStatement(
-                         "UPDATE rpsl SET block=? WHERE key=? AND value=?");
+                         "UPDATE rpsl SET block=?, block_sha512=? WHERE key=? AND value=?");
                  PreparedStatement insertStmt = this.pf.connection.prepareStatement(
-                         "INSERT OR IGNORE INTO rpsl (key, value, block) VALUES (?, ?, ?)");
+                         "INSERT OR IGNORE INTO rpsl (key, value, block, block_sha512) VALUES (?, ?, ?, ?)");
                  PreparedStatement insertRpslOrigin = this.pf.connection.prepareStatement(
                          "INSERT OR REPLACE INTO rpsl_origin (origin, route) VALUES (?, ?)");
                  PreparedStatement insertRpslMntBy = this.pf.connection.prepareStatement(
@@ -183,20 +183,33 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                     }
                 }
 
-                // Save any remaining block
+                // Save any block left unterminated by a trailing blank line
                 if (this.linesOfBlock > 0 && this.block != null && !this.block.isEmpty()) {
-                    this.batchCount = this.BATCH_SIZE - 1;
                     saveBlock();
+                }
+
+                // Flush unconditionally. A dump that ends with a blank line has already
+                // had its last block saved by initBeginBlock(), so keying this on
+                // linesOfBlock would silently discard the final partial batch — and with
+                // it the matching temp_rpsl rows, which cleanupOutdatedRpsl would then
+                // read as "absent from the file" and delete.
+                if (this.batchCount > 0) {
+                    this.storeInsertStmt.executeBatch();
+                    this.storeTempStmt.executeBatch();
+                    log.info("Executed final batch of {} RPSL records", this.batchCount);
+                    this.batchCount = 0;
                 }
 
                 if (this.batchCountRpslOrigin > 0) {
                     this.storeInsertRpslOrigin.executeBatch();
                     this.storeInsertTempRpslOrigin.executeBatch();
+                    this.batchCountRpslOrigin = 0;
                 }
 
                 if (this.batchCountRpslMntBy > 0) {
                     this.storeInsertRpslMntBy.executeBatch();
                     this.storeInsertTempRpslMntBy.executeBatch();
+                    this.batchCountRpslMntBy = 0;
                 }
 
                 runIncrementalVacuumSmart(pf);
@@ -313,16 +326,23 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         }
 
         try {
+            String blockText = this.block.toString();
+            String shaBlock = sha512(blockText);
+
             this.storeSelectStmt.setString(1, this.key);
             this.storeSelectStmt.setString(2, this.value);
-            ResultSet rs = storeSelectStmt.executeQuery();
-            if (rs.next()) {
-
-                String existingShaBlock = rs.getString("shablock");
-                String shaBlock = sha512(this.block.toString());
+            boolean exists;
+            String existingShaBlock;
+            try (ResultSet rs = this.storeSelectStmt.executeQuery()) {
+                exists = rs.next();
+                existingShaBlock = exists ? rs.getString("block_sha512") : null;
+            }
+            if (exists) {
                 log.debug("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
                 log.debug("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
-                if (existingShaBlock.equals(shaBlock)) {
+                // A null hash means the row predates the block_sha512 column and was not
+                // backfilled — treat it as changed so the UPDATE below fills it in.
+                if (shaBlock.equals(existingShaBlock)) {
                     // Block unchanged — still register as seen to protect from cleanup
                     this.storeTempStmt.setString(1, this.key);
                     this.storeTempStmt.setString(2, this.value);
@@ -336,15 +356,17 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                     return;
                 }
 
-                this.storeUpdateStmt.setString(1, this.block.toString());
-                this.storeUpdateStmt.setString(2, this.key);
-                this.storeUpdateStmt.setString(3, this.value);
+                this.storeUpdateStmt.setString(1, blockText);
+                this.storeUpdateStmt.setString(2, shaBlock);
+                this.storeUpdateStmt.setString(3, this.key);
+                this.storeUpdateStmt.setString(4, this.value);
                 this.storeUpdateStmt.executeUpdate();
                 log.info("Update RPSL records for [{} : {}]", this.key, this.value);
             } else {
                 this.storeInsertStmt.setString(1, this.key);
                 this.storeInsertStmt.setString(2, this.value);
-                this.storeInsertStmt.setString(3, this.block.toString());
+                this.storeInsertStmt.setString(3, blockText);
+                this.storeInsertStmt.setString(4, shaBlock);
                 this.storeInsertStmt.addBatch();
                 log.debug("Insert RPSL records for [{} : {}]", this.key, this.value);
             }

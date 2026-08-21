@@ -27,7 +27,10 @@ import static net.ukrcom.whoislitelocal.parse.parseExtended.IPBigIntegerWithZero
 @Slf4j
 public class parseGeolocations extends parseAbstract implements parseInterface {
 
-    private int batchCount = 0;
+    // One counter per statement: a shared counter would flush only one of the two
+    // batches and reset, leaving the other's rows queued and possibly never executed.
+    private int updateBatchCount = 0;
+    private int insertBatchCount = 0;
     private PreparedStatement storeUpdateStmt;
     private PreparedStatement storeInsertStmt;
     private static final int BATCH_SIZE = 1000;
@@ -43,9 +46,13 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
             super.parse(pf); // per-row store() calls + vacuum + file_metadata (each synchronized internally)
 
             synchronized (pf.connection) {
-                if (batchCount > 0) {
+                if (updateBatchCount > 0) {
                     storeUpdateStmt.executeBatch();
+                    updateBatchCount = 0;
+                }
+                if (insertBatchCount > 0) {
                     storeInsertStmt.executeBatch();
+                    insertBatchCount = 0;
                 }
                 runIncrementalVacuumSmart(pf);
             }
@@ -131,22 +138,22 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                 storeUpdateStmt.setString(2, ipBigIntStr);
                 storeUpdateStmt.addBatch();
                 log.info("Update GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
-                if (++batchCount == BATCH_SIZE) {
+                if (++updateBatchCount >= BATCH_SIZE) {
                     synchronized (pf.connection) {
                         storeUpdateStmt.executeBatch();
                     }
-                    batchCount = 0;
+                    updateBatchCount = 0;
                 }
             } else if (doInsert) {
                 storeInsertStmt.setString(1, ipBigIntStr);
                 storeInsertStmt.setString(2, geo);
                 storeInsertStmt.addBatch();
                 log.debug("Insert GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
-                if (++batchCount == BATCH_SIZE) {
+                if (++insertBatchCount >= BATCH_SIZE) {
                     synchronized (pf.connection) {
                         storeInsertStmt.executeBatch();
                     }
-                    batchCount = 0;
+                    insertBatchCount = 0;
                 }
             }
         } catch (UnknownHostException ex) {
