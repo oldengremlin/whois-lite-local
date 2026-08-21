@@ -28,27 +28,35 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
-public class retrieveOrganisation extends retrieveAutNum {
+public class RetrieveMntBy {
 
-    public retrieveOrganisation(String autNum) {
-        super(autNum);
+    protected String mntBy;
+
+    public RetrieveMntBy(String mntBy) {
+        this.mntBy = mntBy;
     }
 
-    public retrieveAutNum Load() {
+    /**
+     * Prints the aut-num and as-set objects held by this maintainer. One join
+     * replaces the former loop that reopened a database connection for every
+     * value it had just listed.
+     */
+    public RetrieveMntBy printMntBy() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
              PreparedStatement selectStmt = conn.prepareStatement(
-                     "SELECT block FROM rpsl WHERE key=? AND value=?");) {
-
-            selectStmt.setString(1, "aut-num");
-            selectStmt.setString(2, this.autNum);
-            ResultSet rs = selectStmt.executeQuery();
-            while (rs.next()) {
-                this.autNumBlock = rs.getString("block");
-                System.out.println(getAsn(this.autNum));
+                     "SELECT r.block FROM rpsl_mntby m "
+                     + "JOIN rpsl r ON r.key = m.key AND r.value = m.value "
+                     + "WHERE m.mntby = ? AND m.key IN ('aut-num', 'as-set') "
+                     + "ORDER BY m.key, m.value")) {
+            selectStmt.setString(1, this.mntBy);
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                while (rs.next()) {
+                    Config.printBlock(rs.getString("block"));
+                    System.out.println();
+                }
             }
-
         } catch (SQLException ex) {
-            log.error("Failed to retrieve AutNum for Organisation", ex);
+            log.error("Failed to print MntBy", ex);
         }
         return this;
     }

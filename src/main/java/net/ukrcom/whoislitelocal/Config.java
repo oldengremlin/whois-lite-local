@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -30,11 +31,15 @@ import lombok.extern.slf4j.Slf4j;
 public class Config {
 
     private static final String DB_URL = "jdbc:sqlite:whoislitelocal.db";
-//    private static final String DB_URL = "jdbc:log4jdbc:sqlite:whoislitelocal.db";
     private static final String PROPERTIES_FILE = "whoislitelocal.properties";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final int CONNECT_TIMEOUT = 10_000; // 10 seconds
     private static final int READ_TIMEOUT = 30_000; // 30 seconds
+    // Upper bounds for data pulled from a mirror. A compromised or broken mirror
+    // could otherwise fill the temp filesystem, or serve a small archive that
+    // inflates without limit.
+    private static final long MAX_DOWNLOAD_BYTES = 8L * 1024 * 1024 * 1024;      // 8 GiB compressed
+    private static final long MAX_DECOMPRESSED_BYTES = 64L * 1024 * 1024 * 1024; // 64 GiB expanded
 
     public static String getDBUrl() {
         return DB_URL;
@@ -56,11 +61,21 @@ public class Config {
         return DATE_FORMATTER;
     }
 
+    public static long getMaxDownloadBytes() {
+        return MAX_DOWNLOAD_BYTES;
+    }
+
+    public static long getMaxDecompressedBytes() {
+        return MAX_DECOMPRESSED_BYTES;
+    }
+
     // SHA-512 hashes of blocks already printed in this JVM run.
     // Highlander rule: identical RPSL object → show it only once.
     // Storing 64-byte hashes instead of full block text keeps the Set compact
     // even when hundreds of route/route6 blocks are emitted in one run.
-    private static final Set<String> printedBlockHashes = new HashSet<>();
+    // Concurrent-safe: printing is single-threaded today, but this costs nothing
+    // and removes a latent hazard if retrieval ever runs in parallel.
+    private static final Set<String> printedBlockHashes = ConcurrentHashMap.newKeySet();
 
     /**
      * Prints an RPSL block to stdout with two layers of deduplication:
@@ -83,7 +98,7 @@ public class Config {
 
         // Highlander: hash the normalised block and bail if already seen
         try {
-            if (!printedBlockHashes.add(initializeDatabase.sha512(block.strip()))) {
+            if (!printedBlockHashes.add(InitializeDatabase.sha512(block.strip()))) {
                 return;
             }
         } catch (Exception e) {

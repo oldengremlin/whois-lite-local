@@ -42,7 +42,7 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
-public class processFiles {
+public class ProcessFiles {
 
     private record DownloadedFile(String url, Path tempFile, String lastModified, long fileSize) {
 
@@ -54,7 +54,7 @@ public class processFiles {
     protected String lastModified;
     protected long fileSize;
 
-    public processFiles process(String paramUrls, parseInterface parseFile) throws
+    public ProcessFiles process(String paramUrls, ParseInterface parseFile) throws
             IOException, SQLException, URISyntaxException {
         String[] urls = readUrls(paramUrls);
         if (urls.length == 0) {
@@ -84,7 +84,7 @@ public class processFiles {
             return this;
         }
 
-        // Phase 3: parse + write (own connection — used by sequential parsers like parseRpsl)
+        // Phase 3: parse + write (own connection — used by sequential parsers like ParseRpsl)
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             this.connection = conn;
             try (var stmt = conn.createStatement()) {
@@ -106,7 +106,7 @@ public class processFiles {
         return this;
     }
 
-    public processFiles process(String paramUrls, parseInterface parseFile, Connection sharedConn) throws
+    public ProcessFiles process(String paramUrls, ParseInterface parseFile, Connection sharedConn) throws
             IOException, SQLException, URISyntaxException {
         String[] urls = readUrls(paramUrls);
         if (urls.length == 0) {
@@ -156,7 +156,7 @@ public class processFiles {
      */
     private String[] readUrls(String paramUrls) throws IOException {
         Properties props = new Properties();
-        try (InputStream input = processFiles.class.getClassLoader().getResourceAsStream(Config.getPropertiesFile())) {
+        try (InputStream input = ProcessFiles.class.getClassLoader().getResourceAsStream(Config.getPropertiesFile())) {
             if (input == null) {
                 throw new IOException("Configuration file not found in classpath: " + Config.getPropertiesFile());
             }
@@ -175,13 +175,14 @@ public class processFiles {
         try (PreparedStatement stmt = readConn.prepareStatement(
                 "SELECT last_modified, file_size FROM file_metadata WHERE url = ?")) {
             stmt.setString(1, this.processUrl);
-            ResultSet rs = stmt.executeQuery();
-            if (!rs.next()) {
-                return true; // No metadata, download
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return true; // No metadata, download
+                }
+                this.lastModified = rs.getString("last_modified");
+                this.fileSize = rs.getLong("file_size");
             }
-            this.lastModified = rs.getString("last_modified");
-            this.fileSize = rs.getLong("file_size");
-            URI uri = new URI(this.processUrl);
+            URI uri = openableUri(this.processUrl);
             HttpURLConnection connHttp = (HttpURLConnection) uri.toURL().openConnection();
             try {
                 connHttp.setRequestMethod("HEAD");
@@ -222,19 +223,61 @@ public class processFiles {
     }
 
     private DownloadedFile downloadOne(String url) throws URISyntaxException, IOException {
-        URI uri = new URI(url);
+        URI uri = openableUri(url);
         HttpURLConnection connHttp = (HttpURLConnection) uri.toURL().openConnection();
         connHttp.setConnectTimeout(Config.getConnectTimeout());
         connHttp.setReadTimeout(Config.getReadTimeout());
         String lm = connHttp.getHeaderField("Last-Modified") != null ? connHttp.getHeaderField("Last-Modified") : "";
         long fs = connHttp.getContentLengthLong();
+
+        long maxBytes = Config.getMaxDownloadBytes();
+        if (fs > maxBytes) {
+            connHttp.disconnect();
+            throw new IOException("Refusing to download " + url + ": Content-Length " + fs
+                    + " exceeds the limit of " + maxBytes + " bytes");
+        }
+
+        // Created only after the request is accepted, and removed again if the
+        // transfer fails — otherwise every failed download leaves a stray file.
         Path tf = Files.createTempFile("whoislite_", ".txt");
         try (InputStream inputStream = connHttp.getInputStream()) {
             log.info("Downloading {} to temporary file {}", url, tf);
-            Files.copy(inputStream, tf, StandardCopyOption.REPLACE_EXISTING);
+            long copied = Files.copy(inputStream, tf, StandardCopyOption.REPLACE_EXISTING);
+            if (copied > maxBytes) {
+                throw new IOException("Download of " + url + " exceeded the limit of " + maxBytes
+                        + " bytes (server did not declare an accurate Content-Length)");
+            }
+            return new DownloadedFile(url, tf, lm, fs);
+        } catch (IOException | RuntimeException e) {
+            try {
+                Files.deleteIfExists(tf);
+            } catch (IOException suppressed) {
+                e.addSuppressed(suppressed);
+            }
+            throw e;
         } finally {
             connHttp.disconnect();
         }
-        return new DownloadedFile(url, tf, lm, fs);
+    }
+
+    /**
+     * Rejects anything that is not HTTPS. Downloaded data becomes the answer to
+     * "who owns this address", so it must not be modifiable in transit. Plain
+     * HTTP to a loopback address stays allowed so the tool can be tested against
+     * a local mirror.
+     */
+    private URI openableUri(String url) throws URISyntaxException, IOException {
+        URI uri = new URI(url);
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+        if ("https".equals(scheme)) {
+            return uri;
+        }
+        String host = uri.getHost() == null ? "" : uri.getHost();
+        if ("http".equals(scheme) && (host.equals("127.0.0.1") || host.equals("::1") || host.equals("localhost"))) {
+            log.warn("Using plain HTTP to {} — acceptable for a local mirror only", host);
+            return uri;
+        }
+        throw new IOException("Refusing to fetch " + url + ": only https:// is allowed "
+                + "(plain http:// permitted for localhost only)");
     }
 }

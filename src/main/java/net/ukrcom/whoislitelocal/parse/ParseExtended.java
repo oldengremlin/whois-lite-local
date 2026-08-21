@@ -34,49 +34,106 @@ import net.ukrcom.whoislitelocal.IpUtils;
  * @author olden
  */
 @Slf4j
-public class parseExtended extends parseAbstract implements parseInterface, AutoCloseable {
+public class ParseExtended extends ParseAbstract implements ParseInterface {
+
+    private static final int BATCH_SIZE = 1000;
 
     private final Set<String> coordinators = new HashSet<>();
     private boolean needInitializeTempTables = true;
 
+    // Prepared once per file rather than once per row: preparing and closing four
+    // statements for every line dominated the cost of parsing extended files.
+    private PreparedStatement tempIpv4Stmt, mainIpv4Stmt;
+    private PreparedStatement tempIpv6Stmt, mainIpv6Stmt;
+    private int ipv4BatchCount = 0;
+    private int ipv6BatchCount = 0;
+
     @Override
-    public void parse(processFiles pf) {
+    public void parse(ProcessFiles pf) {
         try {
             synchronized (pf.connection) {
-                if (needInitializeTempTables) {
-                    pf.connection.createStatement().execute("""
-                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv4 (
-                            coordinator TEXT NOT NULL,
-                            identifier TEXT NOT NULL,
-                            network TEXT NOT NULL,
-                            UNIQUE(coordinator, identifier, network)
-                        )""");
-                    pf.connection.createStatement().execute("""
-                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv6 (
-                            coordinator TEXT NOT NULL,
-                            identifier TEXT NOT NULL,
-                            network TEXT NOT NULL,
-                            UNIQUE(coordinator, identifier, network)
-                        )""");
-                    needInitializeTempTables = false;
-                } else {
-                    pf.connection.createStatement().execute("DELETE FROM temp_ipv4");
-                    pf.connection.createStatement().execute("DELETE FROM temp_ipv6");
+                try (var stmt = pf.connection.createStatement()) {
+                    if (needInitializeTempTables) {
+                        stmt.execute("""
+                            CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv4 (
+                                coordinator TEXT NOT NULL,
+                                identifier TEXT NOT NULL,
+                                network TEXT NOT NULL,
+                                UNIQUE(coordinator, identifier, network)
+                            )""");
+                        stmt.execute("""
+                            CREATE TEMPORARY TABLE IF NOT EXISTS temp_ipv6 (
+                                coordinator TEXT NOT NULL,
+                                identifier TEXT NOT NULL,
+                                network TEXT NOT NULL,
+                                UNIQUE(coordinator, identifier, network)
+                            )""");
+                        needInitializeTempTables = false;
+                    } else {
+                        stmt.execute("DELETE FROM temp_ipv4");
+                        stmt.execute("DELETE FROM temp_ipv6");
+                    }
                 }
             }
             coordinators.clear();
-            super.parse(pf);
+
             synchronized (pf.connection) {
-                cleanupOutdatedNetworks(pf);
-                runIncrementalVacuumSmart(pf);
+                tempIpv4Stmt = pf.connection.prepareStatement(
+                        "INSERT OR IGNORE INTO temp_ipv4 (coordinator, identifier, network) VALUES (?, ?, ?)");
+                mainIpv4Stmt = pf.connection.prepareStatement(
+                        "INSERT OR IGNORE INTO ipv4 (coordinator, country, network, date, identifier, firstip, lastip)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?)");
+                tempIpv6Stmt = pf.connection.prepareStatement(
+                        "INSERT OR IGNORE INTO temp_ipv6 (coordinator, identifier, network) VALUES (?, ?, ?)");
+                mainIpv6Stmt = pf.connection.prepareStatement(
+                        "INSERT OR IGNORE INTO ipv6 (coordinator, country, network, date, identifier, firstip, lastip)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?)");
+            }
+            try {
+                super.parse(pf);
+                synchronized (pf.connection) {
+                    flushBatches();
+                    cleanupOutdatedNetworks(pf);
+                    runIncrementalVacuumSmart(pf);
+                }
+            } finally {
+                synchronized (pf.connection) {
+                    closeQuietly(tempIpv4Stmt, mainIpv4Stmt, tempIpv6Stmt, mainIpv6Stmt);
+                    tempIpv4Stmt = mainIpv4Stmt = tempIpv6Stmt = mainIpv6Stmt = null;
+                }
             }
         } catch (SQLException e) {
             log.error("Failed to process file or cleanup networks", e);
         }
     }
 
+    private void flushBatches() throws SQLException {
+        if (ipv4BatchCount > 0) {
+            tempIpv4Stmt.executeBatch();
+            mainIpv4Stmt.executeBatch();
+            ipv4BatchCount = 0;
+        }
+        if (ipv6BatchCount > 0) {
+            tempIpv6Stmt.executeBatch();
+            mainIpv6Stmt.executeBatch();
+            ipv6BatchCount = 0;
+        }
+    }
+
+    private static void closeQuietly(PreparedStatement... statements) {
+        for (PreparedStatement stmt : statements) {
+            if (stmt != null) {
+                try {
+                    stmt.close();
+                } catch (SQLException ignore) {
+                    // nothing useful to do while unwinding
+                }
+            }
+        }
+    }
+
     @Override
-    public void store(processFiles pf) {
+    public void store(ProcessFiles pf) {
         String[] fields = this.line.split("\\|");
         if (fields.length < 8 || !fields[6].equals("allocated") || fields[1].equals("*")) {
             return; // Skip non-allocated or wildcard country
@@ -119,7 +176,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         }
     }
 
-    private void processAsn(processFiles pf, String coordinator, String country, String value, String date, String identifier) throws
+    private void processAsn(ProcessFiles pf, String coordinator, String country, String value, String date, String identifier) throws
             SQLException {
         int asn = IpUtils.validateAsn(value);
         try (PreparedStatement selectStmt = pf.connection.prepareStatement(
@@ -159,79 +216,64 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         }
     }
 
-    private void processIpv4(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws
+    private void processIpv4(ProcessFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws
             UnknownHostException, SQLException {
-        String ipv4Network = IpUtils.ipv4ToCidr(value, Integer.parseInt(countOrPrefix));
-
-        String firstip = null;
-        String lastip = null;
-        try {
-            IPAddress ipv4Address = new IPAddressString(ipv4Network).toAddress();
-            firstip = IPBigIntegerWithZero(IP2BigInteger(ipv4Address.getLower().toString()).toString());
-            lastip = IPBigIntegerWithZero(IP2BigInteger(ipv4Address.getUpper().toString()).toString());
-        } catch (AddressStringException | IncompatibleAddressException e) {
-            log.error("Invalid network {} : {}", ipv4Network, e);
-        }
-
-        try (PreparedStatement tempStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO temp_ipv4 (coordinator, identifier, network) VALUES (?, ?, ?)")) {
-            tempStmt.setString(1, coordinator);
-            tempStmt.setString(2, identifier);
-            tempStmt.setString(3, ipv4Network);
-            tempStmt.addBatch();
-            tempStmt.executeBatch();
-        }
-        try (PreparedStatement mainStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO ipv4 (coordinator, country, network, date, identifier, firstip, lastip) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
-            mainStmt.setString(1, coordinator);
-            mainStmt.setString(2, country);
-            mainStmt.setString(3, ipv4Network);
-            mainStmt.setString(4, date);
-            mainStmt.setString(5, identifier);
-            mainStmt.setString(6, firstip);
-            mainStmt.setString(7, lastip);
-            mainStmt.addBatch();
-            mainStmt.executeBatch();
+        // An extended-file ipv4 count is an address count, not necessarily a power
+        // of two, so a delegation can span several CIDR blocks. Deriving a single
+        // prefix from log2(count) silently misrepresented those ranges.
+        for (IPAddress block : IpUtils.ipv4RangeToCidrBlocks(value, Integer.parseInt(countOrPrefix))) {
+            queueNetwork(block, tempIpv4Stmt, mainIpv4Stmt, coordinator, country, date, identifier);
+            if (++ipv4BatchCount >= BATCH_SIZE) {
+                tempIpv4Stmt.executeBatch();
+                mainIpv4Stmt.executeBatch();
+                ipv4BatchCount = 0;
+            }
         }
     }
 
-    private void processIpv6(processFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws
+    private void processIpv6(ProcessFiles pf, String coordinator, String country, String value, String countOrPrefix, String date, String identifier) throws
             UnknownHostException, SQLException {
+        // For ipv6 the field really is a prefix length, so there is exactly one block.
         String ipv6Network = IpUtils.ipv6ToCidr(value, Integer.parseInt(countOrPrefix));
-
-        String firstip = null;
-        String lastip = null;
+        IPAddress block;
         try {
-            IPAddress ipv6Address = new IPAddressString(ipv6Network).toAddress();
-            firstip = IPBigIntegerWithZero(IP2BigInteger(ipv6Address.getLower().toString()).toString());
-            lastip = IPBigIntegerWithZero(IP2BigInteger(ipv6Address.getUpper().toString()).toString());
+            block = new IPAddressString(ipv6Network).toAddress();
         } catch (AddressStringException | IncompatibleAddressException e) {
             log.error("Invalid network {} : {}", ipv6Network, e);
+            recordStoreError();
+            return;
         }
-
-        try (PreparedStatement tempStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO temp_ipv6 (coordinator, identifier, network) VALUES (?, ?, ?)")) {
-            tempStmt.setString(1, coordinator);
-            tempStmt.setString(2, identifier);
-            tempStmt.setString(3, ipv6Network);
-            tempStmt.addBatch();
-            tempStmt.executeBatch();
-        }
-        try (PreparedStatement mainStmt = pf.connection.prepareStatement(
-                "INSERT OR IGNORE INTO ipv6 (coordinator, country, network, date, identifier, firstip, lastip) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
-            mainStmt.setString(1, coordinator);
-            mainStmt.setString(2, country);
-            mainStmt.setString(3, ipv6Network);
-            mainStmt.setString(4, date);
-            mainStmt.setString(5, identifier);
-            mainStmt.setString(6, firstip);
-            mainStmt.setString(7, lastip);
-            mainStmt.addBatch();
-            mainStmt.executeBatch();
+        queueNetwork(block, tempIpv6Stmt, mainIpv6Stmt, coordinator, country, date, identifier);
+        if (++ipv6BatchCount >= BATCH_SIZE) {
+            tempIpv6Stmt.executeBatch();
+            mainIpv6Stmt.executeBatch();
+            ipv6BatchCount = 0;
         }
     }
 
-    private void cleanupNetworks(processFiles pf, String coordinator, String identifier) throws
+    private void queueNetwork(IPAddress block, PreparedStatement tempStmt, PreparedStatement mainStmt,
+            String coordinator, String country, String date, String identifier) throws
+            UnknownHostException, SQLException {
+        String network = block.toString();
+        String firstip = IPBigIntegerWithZero(IP2BigInteger(block.getLower().toString()).toString());
+        String lastip = IPBigIntegerWithZero(IP2BigInteger(block.getUpper().toString()).toString());
+
+        tempStmt.setString(1, coordinator);
+        tempStmt.setString(2, identifier);
+        tempStmt.setString(3, network);
+        tempStmt.addBatch();
+
+        mainStmt.setString(1, coordinator);
+        mainStmt.setString(2, country);
+        mainStmt.setString(3, network);
+        mainStmt.setString(4, date);
+        mainStmt.setString(5, identifier);
+        mainStmt.setString(6, firstip);
+        mainStmt.setString(7, lastip);
+        mainStmt.addBatch();
+    }
+
+    private void cleanupNetworks(ProcessFiles pf, String coordinator, String identifier) throws
             SQLException {
         try (PreparedStatement deleteIpv4Stmt = pf.connection.prepareStatement(
                 "DELETE FROM ipv4 WHERE coordinator = ? AND identifier = ?")) {
@@ -253,7 +295,7 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         }
     }
 
-    private void cleanupOutdatedNetworks(processFiles pf) throws SQLException {
+    private void cleanupOutdatedNetworks(ProcessFiles pf) throws SQLException {
         if (coordinators.isEmpty()) {
             log.info("No coordinators processed, skipping outdated networks cleanup");
             return;
@@ -280,16 +322,14 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
             }
         }
         // Clear temporary tables (but don't drop them)
-        pf.connection.createStatement().execute("DELETE FROM temp_ipv4");
-        pf.connection.createStatement().execute("DELETE FROM temp_ipv6");
+        try (var stmt = pf.connection.createStatement()) {
+            stmt.execute("DELETE FROM temp_ipv4");
+            stmt.execute("DELETE FROM temp_ipv6");
+        }
     }
 
     public static BigInteger IP2BigInteger(String ipAddress) throws
             UnknownHostException {
-//        ipAddress = ipAddress.replaceFirst("/\\d+$", "");
-//        InetAddress ipInetAddress = InetAddress.getByName(ipAddress);
-//        byte[] ipBytes = ipInetAddress.getAddress();
-//        return new BigInteger(1, ipBytes); // 1 означає додатне число
         IPAddressString ipStr = new IPAddressString(ipAddress);
         IPAddress ip = ipStr.getAddress();
         if (ip == null) {
@@ -298,17 +338,12 @@ public class parseExtended extends parseAbstract implements parseInterface, Auto
         return ip.getValue();
     }
 
+    /**
+     * Left-pads the decimal form of an address to a fixed width so that the
+     * TEXT columns firstip/lastip compare correctly with &lt;= and &gt;=.
+     */
     public static String IPBigIntegerWithZero(String strIPBigInt) {
-        StringBuilder resultStr = new StringBuilder();
-        for (int i = 0; i < 40 - strIPBigInt.length(); i++) {
-            resultStr.append("0");
-        }
-        resultStr.append(strIPBigInt);
-        return resultStr.toString();
-    }
-
-    @Override
-    public void close() throws Exception {
-        needInitializeTempTables = false;
+        int pad = 40 - strIPBigInt.length();
+        return pad > 0 ? "0".repeat(pad) + strIPBigInt : strIPBigInt;
     }
 }

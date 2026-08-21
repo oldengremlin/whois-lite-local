@@ -29,10 +29,10 @@ import net.ukrcom.whoislitelocal.IpUtils;
  * @author olden
  */
 @Slf4j
-public class parseAsnames extends parseAbstract implements parseInterface {
+public class ParseAsnames extends ParseAbstract implements ParseInterface {
 
     @Override
-    public void store(processFiles pf) {
+    public void store(ProcessFiles pf) {
         if (this.line.trim().isEmpty()) {
             return; // Skip empty lines
         }
@@ -78,10 +78,15 @@ public class parseAsnames extends parseAbstract implements parseInterface {
             try (PreparedStatement selectStmt = pf.connection.prepareStatement(
                     "SELECT name, country FROM asn WHERE asn = ?")) {
                 selectStmt.setInt(1, asn);
-                ResultSet rs = selectStmt.executeQuery();
-                if (rs.next()) {
-                    String existingCountry = rs.getString("country");
-                    String existingName = rs.getString("name");
+                boolean found;
+                String existingCountry;
+                String existingName;
+                try (ResultSet rs = selectStmt.executeQuery()) {
+                    found = rs.next();
+                    existingCountry = found ? rs.getString("country") : null;
+                    existingName = found ? rs.getString("name") : null;
+                }
+                if (found) {
                     boolean needUpdate = false;
                     if (existingName == null || !existingName.equalsIgnoreCase(name)) {
                         log.warn("Name mismatch for ASN {}: database has {}, asnames has {}", asn, existingName, name);
@@ -100,6 +105,7 @@ public class parseAsnames extends parseAbstract implements parseInterface {
                             updateStmt.executeUpdate();
                         } catch (SQLException ex) {
                             log.warn("Can't update ASN {}, SQLException {}", asn, ex);
+                            recordStoreError();
                         }
                     }
                 } else {
@@ -118,10 +124,12 @@ public class parseAsnames extends parseAbstract implements parseInterface {
                         insertStmt.executeUpdate();
                     } catch (SQLException ex) {
                         log.warn("Can't insert ASN {} [wll], SQLException {}", asn, ex);
+                        recordStoreError();
                     }
                 }
             } catch (SQLException ex) {
                 log.error("SQLException {}", ex);
+                recordStoreError();
             }
         }
     }

@@ -32,9 +32,9 @@ import org.sqlite.Function;
  * @author olden
  */
 @Slf4j
-public class initializeDatabase {
+public class InitializeDatabase {
 
-    public initializeDatabase createTables() throws SQLException {
+    public InitializeDatabase createTables() throws SQLException {
         try (Connection connSQLite = DriverManager.getConnection(Config.getDBUrl())) {
             configurePragmas(connSQLite);
             connSQLite.setAutoCommit(false);
@@ -134,23 +134,16 @@ public class initializeDatabase {
                     } else {
                         log.info("Index idx_ipv4_coordinator_identifier already exists, skipping creation");
                     }
-                    // Index idx_ipv4_firstip
-                    checkStmt.setString(1, "idx_ipv4_firstip");
+                    // Covering index for the containing-allocation seek in
+                    // RetrieveNetworkOrigin: ORDER BY firstip DESC LIMIT 1 reads
+                    // lastip and network straight from the index.
+                    checkStmt.setString(1, "idx_ipv4_range");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_ipv4_firstip' ON 'ipv4' ('firstip')");
-                        log.info("Created index idx_ipv4_firstip on ipv4 table");
+                        stmt.execute("CREATE INDEX 'idx_ipv4_range' ON 'ipv4' ('firstip', 'lastip', 'network')");
+                        log.info("Created index idx_ipv4_range on ipv4 table");
                     } else {
-                        log.info("Index idx_ipv4_firstip already exists, skipping creation");
-                    }
-                    // Index idx_ipv4_lastip
-                    checkStmt.setString(1, "idx_ipv4_lastip");
-                    rs = checkStmt.executeQuery();
-                    if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_ipv4_lastip' ON 'ipv4' ('lastip')");
-                        log.info("Created index idx_ipv4_lastip on ipv4 table");
-                    } else {
-                        log.info("Index idx_ipv4_lastip already exists, skipping creation");
+                        log.info("Index idx_ipv4_range already exists, skipping creation");
                     }
                     // Index idx_ipv6_coordinator_identifier
                     checkStmt.setString(1, "idx_ipv6_coordinator_identifier");
@@ -161,23 +154,13 @@ public class initializeDatabase {
                     } else {
                         log.info("Index idx_ipv6_coordinator_identifier already exists, skipping creation");
                     }
-                    // Index idx_ipv6_firstip
-                    checkStmt.setString(1, "idx_ipv6_firstip");
+                    checkStmt.setString(1, "idx_ipv6_range");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_ipv6_firstip' ON 'ipv6' ('firstip')");
-                        log.info("Created index idx_ipv6_firstip on ipv4 table");
+                        stmt.execute("CREATE INDEX 'idx_ipv6_range' ON 'ipv6' ('firstip', 'lastip', 'network')");
+                        log.info("Created index idx_ipv6_range on ipv6 table");
                     } else {
-                        log.info("Index idx_ipv6_firstip already exists, skipping creation");
-                    }
-                    // Index idx_ipv6_lastip
-                    checkStmt.setString(1, "idx_ipv6_lastip");
-                    rs = checkStmt.executeQuery();
-                    if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_ipv6_lastip' ON 'ipv6' ('lastip')");
-                        log.info("Created index idx_ipv6_lastip on ipv6 table");
-                    } else {
-                        log.info("Index idx_ipv6_lastip already exists, skipping creation");
+                        log.info("Index idx_ipv6_range already exists, skipping creation");
                     }
                     // No index on rpsl(key, value): UNIQUE(key, value) already creates
                     // sqlite_autoindex_rpsl_1 on exactly those columns, and the query
@@ -190,6 +173,7 @@ public class initializeDatabase {
                 }
 
                 dropRedundantIndexes(stmt);
+                dropSupersededIndexes(stmt);
                 migrateRpslBlockHash(stmt);
 
                 connSQLite.commit();
@@ -244,6 +228,25 @@ public class initializeDatabase {
         stmt.execute("DROP INDEX IF EXISTS idx_rpsl_kv");
         log.info("Dropped redundant index idx_rpsl_kv (duplicated UNIQUE(key, value)); "
                 + "run --vacuum to reclaim the space");
+    }
+
+    /**
+     * Removes the single-column firstip/lastip indexes. A range test needs both
+     * bounds, so SQLite could only ever use one of them and then filter row by
+     * row; idx_ipv4_range / idx_ipv6_range cover the lookup instead.
+     */
+    private void dropSupersededIndexes(java.sql.Statement stmt) throws SQLException {
+        for (String name : new String[]{"idx_ipv4_firstip", "idx_ipv4_lastip",
+            "idx_ipv6_firstip", "idx_ipv6_lastip"}) {
+            try (ResultSet rs = stmt.executeQuery(
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='" + name + "'")) {
+                if (!rs.next()) {
+                    continue;
+                }
+            }
+            stmt.execute("DROP INDEX IF EXISTS " + name);
+            log.info("Dropped index {} (superseded by the covering range index)", name);
+        }
     }
 
     /**

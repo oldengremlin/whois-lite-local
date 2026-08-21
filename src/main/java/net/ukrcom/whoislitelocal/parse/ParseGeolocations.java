@@ -21,11 +21,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import lombok.extern.slf4j.Slf4j;
-import static net.ukrcom.whoislitelocal.parse.parseExtended.IP2BigInteger;
-import static net.ukrcom.whoislitelocal.parse.parseExtended.IPBigIntegerWithZero;
+import static net.ukrcom.whoislitelocal.parse.ParseExtended.IP2BigInteger;
+import static net.ukrcom.whoislitelocal.parse.ParseExtended.IPBigIntegerWithZero;
 
 @Slf4j
-public class parseGeolocations extends parseAbstract implements parseInterface {
+public class ParseGeolocations extends ParseAbstract implements ParseInterface {
 
     // One counter per statement: a shared counter would flush only one of the two
     // batches and reset, leaving the other's rows queued and possibly never executed.
@@ -36,7 +36,7 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
     private static final int BATCH_SIZE = 1000;
 
     @Override
-    public void parse(processFiles pf) {
+    public void parse(ProcessFiles pf) {
         try {
             synchronized (pf.connection) {
                 storeUpdateStmt = pf.connection.prepareStatement("UPDATE geo SET geo = ? WHERE ipaddress = ?");
@@ -77,7 +77,7 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
     }
 
     @Override
-    public void store(processFiles pf) {
+    public void store(ProcessFiles pf) {
         if (this.line.trim().isEmpty()) {
             return; // Skip empty lines
         }
@@ -117,18 +117,20 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                 try (PreparedStatement selectStmt = pf.connection.prepareStatement(
                         "SELECT geo FROM geo WHERE ipaddress = ?")) {
                     selectStmt.setString(1, ipBigIntStr);
-                    ResultSet rs = selectStmt.executeQuery();
-                    if (rs.next()) {
-                        String existingGeo = rs.getString("geo");
-                        if (existingGeo == null || !existingGeo.contains(geo)) {
-                            geoUpdate = existingGeo == null ? geo : existingGeo + "|" + geo;
-                            doUpdate = true;
+                    try (ResultSet rs = selectStmt.executeQuery()) {
+                        if (rs.next()) {
+                            String existingGeo = rs.getString("geo");
+                            if (existingGeo == null || !existingGeo.contains(geo)) {
+                                geoUpdate = existingGeo == null ? geo : existingGeo + "|" + geo;
+                                doUpdate = true;
+                            }
+                        } else {
+                            doInsert = true;
                         }
-                    } else {
-                        doInsert = true;
                     }
                 } catch (SQLException ex) {
                     log.error("SQLException for line {}: {}", this.line, ex.getMessage(), ex);
+                    recordStoreError();
                 }
             }
 
@@ -160,6 +162,7 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
             log.warn("Error in parse data: {}", this.line, ex);
         } catch (SQLException ex) {
             log.warn("Can't batch GEO for line {}: {}", this.line, ex.getMessage());
+            recordStoreError();
         }
 
     }
