@@ -15,9 +15,13 @@
  */
 package net.ukrcom.whoislitelocal;
 
+import inet.ipaddr.IPAddress;
+import inet.ipaddr.IPAddressString;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class IpUtils {
 
     /**
@@ -34,14 +38,46 @@ public class IpUtils {
         if (count <= 0) {
             throw new IllegalArgumentException("Кількість адрес має бути позитивною");
         }
-        // Обчислюємо довжину префікса: log2(count) дає кількість бітів для хостів, тож 32 - log2(count) — це префікс
-        int prefixLength = 32 - (int) Math.floor(Math.log(count) / Math.log(2));
+        if (Integer.bitCount(count) != 1) {
+            throw new IllegalArgumentException(
+                    "Кількість адрес не є степенем двійки, діапазон не зводиться до одного CIDR: " + count);
+        }
+        // Exact integer math: a power of two has its log2 equal to the trailing-zero count.
+        int prefixLength = 32 - Integer.numberOfTrailingZeros(count);
         if (prefixLength < 0 || prefixLength > 32) {
             throw new IllegalArgumentException("Невірна кількість для IPv4: " + count);
         }
         // Валідуємо IP-адресу
         InetAddress inetAddress = InetAddress.getByName(ipAddress);
         return inetAddress.getHostAddress() + "/" + prefixLength;
+    }
+
+    /**
+     * Converts an extended-file IPv4 delegation (start address plus an address
+     * count) into the CIDR blocks that exactly cover it.
+     *
+     * <p>The count is not required to be a power of two — RIRs do delegate
+     * ranges that need several blocks — so this returns one entry for the common
+     * case and more when the range does not align.
+     *
+     * @param startAddress first address of the delegation
+     * @param count        number of addresses in the delegation
+     * @return the covering CIDR blocks, in ascending order
+     */
+    public static IPAddress[] ipv4RangeToCidrBlocks(String startAddress, int count) {
+        if (count <= 0) {
+            throw new IllegalArgumentException("Кількість адрес має бути позитивною: " + count);
+        }
+        IPAddress lower = new IPAddressString(startAddress).getAddress();
+        if (lower == null) {
+            throw new IllegalArgumentException("Невірна IPv4-адреса: " + startAddress);
+        }
+        IPAddress upper = lower.increment(count - 1L);
+        IPAddress[] blocks = lower.toSequentialRange(upper).spanWithPrefixBlocks();
+        if (blocks.length > 1) {
+            log.debug("Delegation {}+{} spans {} CIDR blocks", startAddress, count, blocks.length);
+        }
+        return blocks;
     }
 
     /**

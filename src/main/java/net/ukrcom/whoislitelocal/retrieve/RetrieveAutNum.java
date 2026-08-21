@@ -30,23 +30,23 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
-public class retrieveAutNum {
+public class RetrieveAutNum {
 
     protected String autNum;
     protected String autNumBlock;
 
-    public retrieveAutNum(String autNum) {
+    public RetrieveAutNum(String autNum) {
         this.autNum = autNum;
     }
 
-    public retrieveAutNum printAutNum() {
+    public RetrieveAutNum printAutNum() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
              PreparedStatement selectStmt = conn.prepareStatement(
                      "SELECT block FROM rpsl WHERE key=? AND value=?");) {
 
             selectStmt.setString(1, "aut-num");
             selectStmt.setString(2, this.autNum);
-            ResultSet rs = selectStmt.executeQuery();
+            try (ResultSet rs = selectStmt.executeQuery()) {
             while (rs.next()) {
                 this.autNumBlock = rs.getString("block");
                 Config.printBlock(this.autNumBlock);
@@ -72,6 +72,7 @@ public class retrieveAutNum {
                     }
                 }
             }
+            }
 
         } catch (SQLException ex) {
             log.error("Failed to retrieve AutNum", ex);
@@ -79,7 +80,7 @@ public class retrieveAutNum {
         return this;
     }
 
-    public retrieveAutNum printOrg() {
+    public RetrieveAutNum printOrg() {
         if (autNumBlock != null) {
             autNumBlock.lines().forEach(line -> {
                 String[] parts = line.split("\\s+", 2);
@@ -99,14 +100,15 @@ public class retrieveAutNum {
         StringBuilder retVal = new StringBuilder();
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
              PreparedStatement selectStmt = conn.prepareStatement(
-                     "SELECT block FROM rpsl WHERE key=? AND value=?");) {
+                     "SELECT block FROM rpsl WHERE key=? AND value=?")) {
 
             selectStmt.setString(1, "organisation");
             selectStmt.setString(2, org);
-            ResultSet rs = selectStmt.executeQuery();
-            if (rs.next()) {
-                retVal.append(rs.getString("block"));
-                retVal.append("\n");
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                if (rs.next()) {
+                    retVal.append(rs.getString("block"));
+                    retVal.append("\n");
+                }
             }
 
         } catch (SQLException ex) {
@@ -117,22 +119,30 @@ public class retrieveAutNum {
 
     protected String getAsn(String as) {
         StringBuilder retVal = new StringBuilder();
-        String asNum = as.replaceFirst("^[Aa][Ss]", "");
-        Integer asn = Integer.valueOf(asNum);
+        int asn;
+        try {
+            // A non-numeric argument is a user typo, not a defect: report it
+            // plainly instead of letting NumberFormatException reach the console.
+            asn = Integer.parseInt(as.replaceFirst("^[Aa][Ss]", "").trim());
+        } catch (NumberFormatException ex) {
+            log.error("Not a valid AS number: {} (expected forms: AS3327 or 3327)", as);
+            return "";
+        }
 
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
              PreparedStatement selectStmt = conn.prepareStatement(
-                     "SELECT country, name FROM asn WHERE asn=?");) {
+                     "SELECT country, name FROM asn WHERE asn=?")) {
             selectStmt.setInt(1, asn);
-            ResultSet rs = selectStmt.executeQuery();
-            while (rs.next()) {
-                retVal.append("as-num:         ");
-                retVal.append(as.toUpperCase());
-                retVal.append("\ncountry:        ");
-                retVal.append(rs.getString("country"));
-                retVal.append("\nas-name:        ");
-                retVal.append(rs.getString("name"));
-                retVal.append("\n");
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                while (rs.next()) {
+                    retVal.append("as-num:         ");
+                    retVal.append(as.toUpperCase());
+                    retVal.append("\ncountry:        ");
+                    retVal.append(rs.getString("country"));
+                    retVal.append("\nas-name:        ");
+                    retVal.append(rs.getString("name"));
+                    retVal.append("\n");
+                }
             }
         } catch (SQLException ex) {
             log.error("Failed to retrieve Asn", ex);

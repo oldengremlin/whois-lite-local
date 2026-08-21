@@ -19,9 +19,9 @@ package net.ukrcom.whoislitelocal.parse;
  *
  * @author olden
  */
-public interface parseInterface {
+public interface ParseInterface {
 
-    public void parse(processFiles pf);
+    public void parse(ProcessFiles pf);
 
-    public void store(processFiles pf);
+    public void store(ProcessFiles pf);
 }

@@ -28,29 +28,33 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
-public class retrieveAsSet {
+public class RetrieveRouteOrigin {
 
-    protected String asSet;
-    protected String asSetBlock;
+    protected String origin;
 
-    public retrieveAsSet(String asSet) {
-        this.asSet = asSet;
+    public RetrieveRouteOrigin(String origin) {
+        this.origin = origin;
     }
 
-    public retrieveAsSet printAsSet() {
+    /**
+     * Prints every route/route6 object announced by this origin. A single join
+     * replaces the former loop that reopened a database connection for each
+     * route it had just listed.
+     */
+    public RetrieveRouteOrigin printRouteOrigin() {
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
              PreparedStatement selectStmt = conn.prepareStatement(
-                     "SELECT block FROM rpsl WHERE key=? AND value=?");) {
-            selectStmt.setString(1, "as-set");
-            selectStmt.setString(2, this.asSet);
-            ResultSet rs = selectStmt.executeQuery();
-            while (rs.next()) {
-                this.asSetBlock = rs.getString("block");
-                Config.printBlock(this.asSetBlock);
+                     "SELECT r.block FROM rpsl_origin o "
+                     + "JOIN rpsl r ON r.key IN ('route', 'route6') AND r.value = o.route "
+                     + "WHERE o.origin = ? ORDER BY o.route")) {
+            selectStmt.setString(1, this.origin);
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                while (rs.next()) {
+                    Config.printBlock(rs.getString("block"));
+                }
             }
-
         } catch (SQLException ex) {
-            log.error("Failed to retrieve AsSet", ex);
+            log.error("Failed to print RouteOrigin", ex);
         }
         return this;
     }

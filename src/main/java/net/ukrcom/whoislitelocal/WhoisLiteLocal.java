@@ -71,7 +71,7 @@ public class WhoisLiteLocal {
     private static void executeGetData(boolean vacuum) {
         long startTime = System.currentTimeMillis();
         try {
-            new initializeDatabase().createTables();
+            new InitializeDatabase().createTables();
 
             // Single shared connection for all three parallel parsers — no cross-connection lock contention
             try (Connection sharedConn = DriverManager.getConnection(Config.getDBUrl())) {
@@ -82,15 +82,15 @@ public class WhoisLiteLocal {
 
                 try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                     Future<Void> f1 = executor.submit((Callable<Void>) () -> {
-                        new processFiles().process("urls_extended", new parseExtended(), sharedConn);
+                        new ProcessFiles().process("urls_extended", new ParseExtended(), sharedConn);
                         return null;
                     });
                     Future<Void> f2 = executor.submit((Callable<Void>) () -> {
-                        new processFiles().process("asnames", new parseAsnames(), sharedConn);
+                        new ProcessFiles().process("asnames", new ParseAsnames(), sharedConn);
                         return null;
                     });
                     Future<Void> f3 = executor.submit((Callable<Void>) () -> {
-                        new processFiles().process("geolocations", new parseGeolocations(), sharedConn);
+                        new ProcessFiles().process("geolocations", new ParseGeolocations(), sharedConn);
                         return null;
                     });
 
@@ -123,7 +123,7 @@ public class WhoisLiteLocal {
                 sharedConn.commit();
             }
 
-            new processFiles().process("ripedb", new parseRpsl());
+            new ProcessFiles().process("ripedb", new ParseRpsl());
 
             if (vacuum) {
                 executeVacuum();
@@ -141,7 +141,7 @@ public class WhoisLiteLocal {
     }
 
     private static void executeSearchRpslObject(String pattern) {
-        new retrieveSearchRpslObject(pattern).search();
+        new RetrieveSearchRpslObject(pattern).search();
     }
 
     private static void executeVacuum() {
@@ -149,39 +149,48 @@ public class WhoisLiteLocal {
         log.info("Running full VACUUM...");
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl());
              var stmt = conn.createStatement()) {
+            // On a database created without incremental auto-vacuum, the mode only
+            // changes when VACUUM rebuilds the file on the same connection that set
+            // the pragma — so it has to be set here, not just at initialization.
+            stmt.execute("PRAGMA auto_vacuum = INCREMENTAL");
             stmt.execute("VACUUM");
             log.info("VACUUM completed in {} ms", System.currentTimeMillis() - startTime);
+            try (var rs = stmt.executeQuery("PRAGMA auto_vacuum")) {
+                if (rs.next() && rs.getInt(1) != 2) {
+                    log.warn("auto_vacuum is still {} after VACUUM", rs.getInt(1));
+                }
+            }
         } catch (SQLException e) {
             log.error("VACUUM failed", e);
         }
     }
 
     private static void executeRetrieveAutNum(String autNum) {
-        new retrieveAutNum(autNum).printAutNum().printOrg();
+        new RetrieveAutNum(autNum).printAutNum().printOrg();
     }
 
     private static void executeRetrieveAsSet(String asSet) {
-        new retrieveAsSet(asSet).printAsSet();
+        new RetrieveAsSet(asSet).printAsSet();
     }
 
     private static void executeRetrieveMntBy(String mntBy) {
-        new retrieveMntBy(mntBy).printMntBy();
+        new RetrieveMntBy(mntBy).printMntBy();
     }
 
     private static void executeRetrieveMntner(String mntBy) {
-        new retrieveMntner(mntBy).printMntner().printMntnerRole();
+        new RetrieveMntner(mntBy).printMntner().printMntnerRole();
     }
 
     private static void executeRetrieveOrganisation(String autNum) {
-        new retrieveOrganisation(autNum).Load().printOrg();
+        new RetrieveOrganisation(autNum).Load().printOrg();
     }
 
     private static void executeRouteOrigin(String autNum) {
-        new retrieveRouteOrigin(autNum).printRouteOrigin();
+        new RetrieveRouteOrigin(autNum).printRouteOrigin();
     }
 
     private static void executeNetworkOrigin(String netNum) {
-        new retrieveNetworkOrigin(netNum).printNetworkOrigin();
+        new RetrieveNetworkOrigin(netNum).printNetworkOrigin();
     }
 
 }

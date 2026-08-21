@@ -27,12 +27,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
-import static net.ukrcom.whoislitelocal.initializeDatabase.sha512;
+import static net.ukrcom.whoislitelocal.InitializeDatabase.sha512;
 
 /**
  *
@@ -83,10 +83,11 @@ import static net.ukrcom.whoislitelocal.initializeDatabase.sha512;
                 tech-c:
  */
 @Slf4j
-public class parseRpsl extends parseAbstract implements parseInterface {
+public class ParseRpsl extends ParseAbstract implements ParseInterface {
 
-    private processFiles pf;
+    private ProcessFiles pf;
     private int batchCount = 0;
+    private int updateBatchCount = 0;
     private int batchCountRpslOrigin = 0;
     private int batchCountRpslMntBy = 0;
     private boolean needInitializeTempTables = true;
@@ -108,12 +109,19 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             "route",
             "route6"
     );
-    private final Map<String, String> blockCache = new HashMap<>();
+    // Distinct object types seen in this file. cleanupOutdatedRpsl needs exactly
+    // this — the set of key types to sweep — and nothing more.
+    private final Set<String> seenKeyTypes = new HashSet<>();
+    // Guards against the same object appearing twice in a row. A full (key, value)
+    // set would hold millions of strings for a real dump; duplicates that are not
+    // adjacent are already absorbed by UNIQUE(key, value) with INSERT OR IGNORE.
+    private String lastKey, lastValue;
     private final int BATCH_SIZE = 1000;
 
     @Override
-    public void parse(processFiles pf) {
+    public void parse(ProcessFiles pf) {
         this.pf = pf;
+        resetStoreErrors();
         try (
                 InputStream fileIn = Files.newInputStream(this.pf.tempFile);
                 BufferedInputStream bufferedIn = new BufferedInputStream(fileIn);
@@ -121,42 +129,44 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                 InputStreamReader decoder = new InputStreamReader(decompressedIn, StandardCharsets.UTF_8);
                 BufferedReader reader = new BufferedReader(decoder)) {
 
-            if (this.needInitializeTempTables) {
-                // Initialize temporary tables once per process
-                this.pf.connection.createStatement().execute("""
-                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl (
-                        key TEXT NOT NULL,
-                        value TEXT NOT NULL,
-                        UNIQUE(key, value)
-                    )""");
-
-                this.pf.connection.createStatement().execute("""
-                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl_origin (
-                	origin TEXT NOT NULL COLLATE NOCASE,
-                        route TEXT NOT NULL,
-                        UNIQUE(origin, route)
-                    )""");
-                this.pf.connection.createStatement().execute("""
-                    CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl_mntby (
-                	key TEXT NOT NULL,
-                        value TEXT NOT NULL COLLATE NOCASE,
-                	mntby TEXT NOT NULL COLLATE NOCASE,
-                	UNIQUE(mntby, key, value)
-                    )""");
-
-                this.needInitializeTempTables = false;
-            } else {
-                // Clear temporary tables for this file
-                this.pf.connection.createStatement().execute("DELETE FROM temp_rpsl");
+            try (var stmt = this.pf.connection.createStatement()) {
+                if (this.needInitializeTempTables) {
+                    // Initialize temporary tables once per process
+                    stmt.execute("""
+                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl (
+                            key TEXT NOT NULL,
+                            value TEXT NOT NULL,
+                            UNIQUE(key, value)
+                        )""");
+                    stmt.execute("""
+                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl_origin (
+                            origin TEXT NOT NULL COLLATE NOCASE,
+                            route TEXT NOT NULL,
+                            UNIQUE(origin, route)
+                        )""");
+                    stmt.execute("""
+                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl_mntby (
+                            key TEXT NOT NULL,
+                            value TEXT NOT NULL COLLATE NOCASE,
+                            mntby TEXT NOT NULL COLLATE NOCASE,
+                            UNIQUE(mntby, key, value)
+                        )""");
+                    this.needInitializeTempTables = false;
+                } else {
+                    // Clear temporary tables for this file
+                    stmt.execute("DELETE FROM temp_rpsl");
+                }
             }
-            this.blockCache.clear();
+            this.seenKeyTypes.clear();
+            this.lastKey = null;
+            this.lastValue = null;
 
             try (PreparedStatement selectStmt = this.pf.connection.prepareStatement(
-                    "SELECT sha512(block) AS shablock FROM rpsl WHERE key=? AND value=?");
+                    "SELECT block_sha512 FROM rpsl WHERE key=? AND value=?");
                  PreparedStatement updateStmt = this.pf.connection.prepareStatement(
-                         "UPDATE rpsl SET block=? WHERE key=? AND value=?");
+                         "UPDATE rpsl SET block=?, block_sha512=? WHERE key=? AND value=?");
                  PreparedStatement insertStmt = this.pf.connection.prepareStatement(
-                         "INSERT OR IGNORE INTO rpsl (key, value, block) VALUES (?, ?, ?)");
+                         "INSERT OR IGNORE INTO rpsl (key, value, block, block_sha512) VALUES (?, ?, ?, ?)");
                  PreparedStatement insertRpslOrigin = this.pf.connection.prepareStatement(
                          "INSERT OR REPLACE INTO rpsl_origin (origin, route) VALUES (?, ?)");
                  PreparedStatement insertRpslMntBy = this.pf.connection.prepareStatement(
@@ -183,42 +193,50 @@ public class parseRpsl extends parseAbstract implements parseInterface {
                     }
                 }
 
-                // Save any remaining block
+                // Save any block left unterminated by a trailing blank line
                 if (this.linesOfBlock > 0 && this.block != null && !this.block.isEmpty()) {
-                    this.batchCount = this.BATCH_SIZE - 1;
                     saveBlock();
+                }
+
+                // Flush unconditionally. A dump that ends with a blank line has already
+                // had its last block saved by initBeginBlock(), so keying this on
+                // linesOfBlock would silently discard the final partial batch — and with
+                // it the matching temp_rpsl rows, which cleanupOutdatedRpsl would then
+                // read as "absent from the file" and delete.
+                if (this.batchCount > 0 || this.updateBatchCount > 0) {
+                    log.info("Executing final batch: {} inserted, {} updated",
+                            this.batchCount, this.updateBatchCount);
+                    flushRpslBatches();
                 }
 
                 if (this.batchCountRpslOrigin > 0) {
                     this.storeInsertRpslOrigin.executeBatch();
                     this.storeInsertTempRpslOrigin.executeBatch();
+                    this.batchCountRpslOrigin = 0;
                 }
 
                 if (this.batchCountRpslMntBy > 0) {
                     this.storeInsertRpslMntBy.executeBatch();
                     this.storeInsertTempRpslMntBy.executeBatch();
+                    this.batchCountRpslMntBy = 0;
                 }
 
                 runIncrementalVacuumSmart(pf);
 
             } catch (SQLException ex) {
                 log.error("Failed to process RPSL batch", ex);
+                recordStoreError();
             } catch (Exception ex) {
                 log.error("Exception", ex);
-            }
-            // Update file metadata
-            try (PreparedStatement stmt = this.pf.connection.prepareStatement(
-                    "INSERT OR REPLACE INTO file_metadata (url, last_modified, file_size) VALUES (?, ?, ?)")) {
-                stmt.setString(1, this.pf.processUrl);
-                stmt.setString(2, this.pf.lastModified);
-                stmt.setLong(3, this.pf.fileSize);
-                stmt.executeUpdate();
-            } catch (SQLException ex) {
-                log.error("Error storing metadata for URL {}, SQLException {}", this.pf.processUrl, ex);
+                recordStoreError();
             }
 
+            // Cleanup first: it reads temp_rpsl, which the flush above has just filled.
             cleanupOutdatedRpsl();
             cleanupRpslOriginAndMntBy();
+
+            // Recorded last, and only if nothing was lost, so a failed run is retried.
+            storeFileMetadata(this.pf, storeErrorCount());
 
         } catch (IOException ex) {
             log.error("Can't parse temporary file {}", this.pf.tempFile, ex);
@@ -235,7 +253,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
     }
 
     @Override
-    public void store(processFiles pf) {
+    public void store(ProcessFiles pf) {
 
 //        log.debug("0. line=\"{}\"\n"
 //                + "                                                                                      "
@@ -284,14 +302,14 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         }
         this.key = parts[0].trim().replaceFirst(":$", "");
         this.value = parts[1].trim();
-        if (this.blockCache.containsKey(this.key)) {
-            if (this.blockCache.get(key).equals(this.value)) {
-                log.warn("Object {} already exists in {}", this.value, this.key);
-                return true;
-            }
+        if (this.key.equals(this.lastKey) && this.value.equals(this.lastValue)) {
+            log.warn("Object {} already exists in {}", this.value, this.key);
+            return true;
         }
         log.info("Begin new block: [{} : {}]", this.key, this.value);
-        this.blockCache.put(this.key, this.value);
+        this.lastKey = this.key;
+        this.lastValue = this.value;
+        this.seenKeyTypes.add(this.key);
         return false;
     }
 
@@ -313,38 +331,46 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         }
 
         try {
+            String blockText = this.block.toString();
+            String shaBlock = sha512(blockText);
+
             this.storeSelectStmt.setString(1, this.key);
             this.storeSelectStmt.setString(2, this.value);
-            ResultSet rs = storeSelectStmt.executeQuery();
-            if (rs.next()) {
-
-                String existingShaBlock = rs.getString("shablock");
-                String shaBlock = sha512(this.block.toString());
+            boolean exists;
+            String existingShaBlock;
+            try (ResultSet rs = this.storeSelectStmt.executeQuery()) {
+                exists = rs.next();
+                existingShaBlock = exists ? rs.getString("block_sha512") : null;
+            }
+            if (exists) {
                 log.debug("[{} - {} : {}] SHA512 DB: [ {} ]", this.batchCount, this.key, this.value, existingShaBlock);
                 log.debug("[{} - {} : {}] SHA512   : [ {} ]", this.batchCount, this.key, this.value, shaBlock);
-                if (existingShaBlock.equals(shaBlock)) {
+                // A null hash means the row predates the block_sha512 column and was not
+                // backfilled — treat it as changed so the UPDATE below fills it in.
+                if (shaBlock.equals(existingShaBlock)) {
                     // Block unchanged — still register as seen to protect from cleanup
                     this.storeTempStmt.setString(1, this.key);
                     this.storeTempStmt.setString(2, this.value);
                     this.storeTempStmt.addBatch();
                     if (++this.batchCount >= this.BATCH_SIZE) {
-                        this.storeInsertStmt.executeBatch();
-                        this.storeTempStmt.executeBatch();
-                        log.info("Executed batch of {} RPSL records", this.batchCount);
-                        this.batchCount = 0;
+                        flushRpslBatches();
+                        log.info("Executed batch of {} RPSL records", this.BATCH_SIZE);
                     }
                     return;
                 }
 
-                this.storeUpdateStmt.setString(1, this.block.toString());
-                this.storeUpdateStmt.setString(2, this.key);
-                this.storeUpdateStmt.setString(3, this.value);
-                this.storeUpdateStmt.executeUpdate();
+                this.storeUpdateStmt.setString(1, blockText);
+                this.storeUpdateStmt.setString(2, shaBlock);
+                this.storeUpdateStmt.setString(3, this.key);
+                this.storeUpdateStmt.setString(4, this.value);
+                this.storeUpdateStmt.addBatch();
+                this.updateBatchCount++;
                 log.info("Update RPSL records for [{} : {}]", this.key, this.value);
             } else {
                 this.storeInsertStmt.setString(1, this.key);
                 this.storeInsertStmt.setString(2, this.value);
-                this.storeInsertStmt.setString(3, this.block.toString());
+                this.storeInsertStmt.setString(3, blockText);
+                this.storeInsertStmt.setString(4, shaBlock);
                 this.storeInsertStmt.addBatch();
                 log.debug("Insert RPSL records for [{} : {}]", this.key, this.value);
             }
@@ -354,21 +380,38 @@ public class parseRpsl extends parseAbstract implements parseInterface {
             this.storeTempStmt.addBatch();
 
             if (++this.batchCount >= this.BATCH_SIZE) {
-                this.storeInsertStmt.executeBatch();
-                this.storeTempStmt.executeBatch();
-                log.info("Executed batch of {} RPSL records", this.batchCount);
-                this.batchCount = 0;
+                flushRpslBatches();
+                log.info("Executed batch of {} RPSL records", this.BATCH_SIZE);
             }
 
         } catch (SQLException ex) {
             log.warn("Can't add RPSL [{}:{}] to batch, SQLException {}", this.key, this.value, ex);
+            recordStoreError();
         } catch (Exception ex) {
             log.warn("Exception {}", ex);
+            recordStoreError();
+        }
+    }
+
+    /**
+     * Executes the queued inserts, updates and temp_rpsl rows together. Updates
+     * are batched like the inserts — running them one at a time turned every
+     * changed object into its own round trip.
+     */
+    private void flushRpslBatches() throws SQLException {
+        if (this.batchCount > 0) {
+            this.storeInsertStmt.executeBatch();
+            this.storeTempStmt.executeBatch();
+            this.batchCount = 0;
+        }
+        if (this.updateBatchCount > 0) {
+            this.storeUpdateStmt.executeBatch();
+            this.updateBatchCount = 0;
         }
     }
 
     private void cleanupOutdatedRpsl() throws SQLException {
-        if (this.blockCache.isEmpty()) {
+        if (this.seenKeyTypes.isEmpty()) {
             log.info("No processed, skipping outdated rpsl cleanup");
             return;
         }
@@ -379,7 +422,7 @@ public class parseRpsl extends parseAbstract implements parseInterface {
         try (PreparedStatement deleteRpslStmt = this.pf.connection.prepareStatement(
                 "DELETE FROM rpsl WHERE key = ? AND NOT EXISTS "
                 + "(SELECT 1 FROM temp_rpsl t WHERE t.key = rpsl.key AND t.value = rpsl.value)")) {
-            for (String keyType : this.blockCache.keySet()) {
+            for (String keyType : this.seenKeyTypes) {
                 deleteRpslStmt.setString(1, keyType);
                 int deleted = deleteRpslStmt.executeUpdate();
                 if (deleted > 0) {

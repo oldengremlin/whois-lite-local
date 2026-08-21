@@ -21,19 +21,22 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import lombok.extern.slf4j.Slf4j;
-import static net.ukrcom.whoislitelocal.parse.parseExtended.IP2BigInteger;
-import static net.ukrcom.whoislitelocal.parse.parseExtended.IPBigIntegerWithZero;
+import static net.ukrcom.whoislitelocal.parse.ParseExtended.IP2BigInteger;
+import static net.ukrcom.whoislitelocal.parse.ParseExtended.IPBigIntegerWithZero;
 
 @Slf4j
-public class parseGeolocations extends parseAbstract implements parseInterface {
+public class ParseGeolocations extends ParseAbstract implements ParseInterface {
 
-    private int batchCount = 0;
+    // One counter per statement: a shared counter would flush only one of the two
+    // batches and reset, leaving the other's rows queued and possibly never executed.
+    private int updateBatchCount = 0;
+    private int insertBatchCount = 0;
     private PreparedStatement storeUpdateStmt;
     private PreparedStatement storeInsertStmt;
     private static final int BATCH_SIZE = 1000;
 
     @Override
-    public void parse(processFiles pf) {
+    public void parse(ProcessFiles pf) {
         try {
             synchronized (pf.connection) {
                 storeUpdateStmt = pf.connection.prepareStatement("UPDATE geo SET geo = ? WHERE ipaddress = ?");
@@ -43,9 +46,13 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
             super.parse(pf); // per-row store() calls + vacuum + file_metadata (each synchronized internally)
 
             synchronized (pf.connection) {
-                if (batchCount > 0) {
+                if (updateBatchCount > 0) {
                     storeUpdateStmt.executeBatch();
+                    updateBatchCount = 0;
+                }
+                if (insertBatchCount > 0) {
                     storeInsertStmt.executeBatch();
+                    insertBatchCount = 0;
                 }
                 runIncrementalVacuumSmart(pf);
             }
@@ -70,7 +77,7 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
     }
 
     @Override
-    public void store(processFiles pf) {
+    public void store(ProcessFiles pf) {
         if (this.line.trim().isEmpty()) {
             return; // Skip empty lines
         }
@@ -110,18 +117,20 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                 try (PreparedStatement selectStmt = pf.connection.prepareStatement(
                         "SELECT geo FROM geo WHERE ipaddress = ?")) {
                     selectStmt.setString(1, ipBigIntStr);
-                    ResultSet rs = selectStmt.executeQuery();
-                    if (rs.next()) {
-                        String existingGeo = rs.getString("geo");
-                        if (existingGeo == null || !existingGeo.contains(geo)) {
-                            geoUpdate = existingGeo == null ? geo : existingGeo + "|" + geo;
-                            doUpdate = true;
+                    try (ResultSet rs = selectStmt.executeQuery()) {
+                        if (rs.next()) {
+                            String existingGeo = rs.getString("geo");
+                            if (existingGeo == null || !existingGeo.contains(geo)) {
+                                geoUpdate = existingGeo == null ? geo : existingGeo + "|" + geo;
+                                doUpdate = true;
+                            }
+                        } else {
+                            doInsert = true;
                         }
-                    } else {
-                        doInsert = true;
                     }
                 } catch (SQLException ex) {
                     log.error("SQLException for line {}: {}", this.line, ex.getMessage(), ex);
+                    recordStoreError();
                 }
             }
 
@@ -131,28 +140,29 @@ public class parseGeolocations extends parseAbstract implements parseInterface {
                 storeUpdateStmt.setString(2, ipBigIntStr);
                 storeUpdateStmt.addBatch();
                 log.info("Update GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
-                if (++batchCount == BATCH_SIZE) {
+                if (++updateBatchCount >= BATCH_SIZE) {
                     synchronized (pf.connection) {
                         storeUpdateStmt.executeBatch();
                     }
-                    batchCount = 0;
+                    updateBatchCount = 0;
                 }
             } else if (doInsert) {
                 storeInsertStmt.setString(1, ipBigIntStr);
                 storeInsertStmt.setString(2, geo);
                 storeInsertStmt.addBatch();
                 log.debug("Insert GEO for {} [{}]: {} ", ipAddress, ipBigIntStr, geo);
-                if (++batchCount == BATCH_SIZE) {
+                if (++insertBatchCount >= BATCH_SIZE) {
                     synchronized (pf.connection) {
                         storeInsertStmt.executeBatch();
                     }
-                    batchCount = 0;
+                    insertBatchCount = 0;
                 }
             }
         } catch (UnknownHostException ex) {
             log.warn("Error in parse data: {}", this.line, ex);
         } catch (SQLException ex) {
             log.warn("Can't batch GEO for line {}: {}", this.line, ex.getMessage());
+            recordStoreError();
         }
 
     }

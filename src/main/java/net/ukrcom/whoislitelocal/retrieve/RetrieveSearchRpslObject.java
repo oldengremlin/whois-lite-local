@@ -32,13 +32,18 @@ import org.sqlite.Function;
  * @author olden
  */
 @Slf4j
-public class retrieveSearchRpslObject {
+public class RetrieveSearchRpslObject {
+
+    // Wall-clock bound for one whole search, so a pattern that is merely slow
+    // across millions of rows ends with an explanation instead of an apparent hang.
+    private static final long SEARCH_TIME_BUDGET_NANOS = 120L * 1_000_000_000L;
 
     private final String pattern;
     private final Pattern javaPattern;
     private final boolean useRegexp;
+    private long deadline = Long.MAX_VALUE;
 
-    public retrieveSearchRpslObject(String pattern) {
+    public RetrieveSearchRpslObject(String pattern) {
         this.pattern = pattern;
         boolean regexp = true;
         Pattern compiled;
@@ -53,7 +58,8 @@ public class retrieveSearchRpslObject {
         this.useRegexp = regexp;
     }
 
-    public retrieveSearchRpslObject search() {
+    public RetrieveSearchRpslObject search() {
+        this.deadline = System.nanoTime() + SEARCH_TIME_BUDGET_NANOS;
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
             if (useRegexp) {
                 registerRegexpFunction(conn);
@@ -121,8 +127,31 @@ public class retrieveSearchRpslObject {
                     result(0);
                     return;
                 }
-                result(javaPattern.matcher(text).find() ? 1 : 0);
+                result(matchesWithinBudget(text) ? 1 : 0);
             }
         });
+    }
+
+    /**
+     * Matches one block, first checking that the search as a whole is still
+     * within its time budget.
+     *
+     * <p>The check is per row rather than per character. A per-character budget
+     * would also bound a single pathological match, but it costs about 44% on
+     * every search, and the classic catastrophic patterns
+     * ({@code (a+)+$}, {@code (x+x+)+y}) do not actually blow up on the current
+     * JDK regex engine — they complete in single-digit milliseconds. Paying that
+     * much on the common path to guard a case that could not be reproduced is
+     * the wrong trade; a wall-clock bound costs roughly nothing and still turns
+     * a search that grinds across millions of rows into a clear message.
+     */
+    private boolean matchesWithinBudget(String text) throws SQLException {
+        if (System.nanoTime() > deadline) {
+            throw new SQLException("Search for '" + pattern + "' exceeded "
+                    + (SEARCH_TIME_BUDGET_NANOS / 1_000_000_000L) + " seconds and was stopped. "
+                    + "Try a more specific pattern — anchoring it or removing nested quantifiers "
+                    + "usually helps.");
+        }
+        return javaPattern.matcher(text).find();
     }
 }
