@@ -105,6 +105,27 @@ public class InitializeDatabase {
                         route TEXT NOT NULL,
                         UNIQUE(origin, route)
                     )""");
+                // Numeric ranges of the address-bearing RPSL objects (route, route6,
+                // inetnum, inet6num). One row per CIDR block: an inetnum range need
+                // not align to a single prefix, so it can produce several.
+                //
+                // masklen is stored so that "which objects contain this address" can
+                // be answered by masking the address to each possible prefix length
+                // and looking those up exactly. These objects overlap heavily — a /29
+                // and a /48 inside it both exist — so the nearest-below seek used for
+                // RIR allocations does not apply, and a firstip/lastip range predicate
+                // degenerates into scanning a large part of the table.
+                stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS rpsl_net (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        key TEXT NOT NULL,
+                        value TEXT NOT NULL COLLATE NOCASE,
+                        version INTEGER NOT NULL,
+                        masklen INTEGER NOT NULL,
+                        firstip TEXT NOT NULL,
+                        lastip TEXT NOT NULL,
+                        UNIQUE(key, value, firstip, lastip)
+                    )""");
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS "rpsl_mntby" (
 	                id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,6 +182,24 @@ public class InitializeDatabase {
                         log.info("Created index idx_ipv6_range on ipv6 table");
                     } else {
                         log.info("Index idx_ipv6_range already exists, skipping creation");
+                    }
+                    // Exact-prefix lookups: "which objects contain this address"
+                    checkStmt.setString(1, "idx_rpsl_net_exact");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_rpsl_net_exact' ON 'rpsl_net' ('version', 'masklen', 'firstip')");
+                        log.info("Created index idx_rpsl_net_exact on rpsl_net table");
+                    } else {
+                        log.info("Index idx_rpsl_net_exact already exists, skipping creation");
+                    }
+                    // Bounded range scan: "which objects fall inside this one"
+                    checkStmt.setString(1, "idx_rpsl_net_range");
+                    rs = checkStmt.executeQuery();
+                    if (!rs.next()) {
+                        stmt.execute("CREATE INDEX 'idx_rpsl_net_range' ON 'rpsl_net' ('version', 'firstip', 'lastip')");
+                        log.info("Created index idx_rpsl_net_range on rpsl_net table");
+                    } else {
+                        log.info("Index idx_rpsl_net_range already exists, skipping creation");
                     }
                     // No index on rpsl(key, value): UNIQUE(key, value) already creates
                     // sqlite_autoindex_rpsl_1 on exactly those columns, and the query

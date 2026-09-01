@@ -54,6 +54,14 @@ public class WhoisLiteLocal {
                 executeRouteOrigin(parser.getRouteOrigin());
             } else if (parser.isNetworkOrigin()) {
                 executeNetworkOrigin(parser.getNetworkOrigin());
+            } else if (parser.isRetrieveRoute()) {
+                executeRetrieveNetworkObject("route", parser.getRetrieveRoute());
+            } else if (parser.isRetrieveRoute6()) {
+                executeRetrieveNetworkObject("route6", parser.getRetrieveRoute6());
+            } else if (parser.isRetrieveInetnum()) {
+                executeRetrieveNetworkObject("inetnum", parser.getRetrieveInetnum());
+            } else if (parser.isRetrieveInet6num()) {
+                executeRetrieveNetworkObject("inet6num", parser.getRetrieveInet6num());
             } else if (parser.isSearchRpslObject()) {
                 executeSearchRpslObject(parser.getSearchRpslObject());
             } else if (parser.isVacuum()) {
@@ -138,6 +146,10 @@ public class WhoisLiteLocal {
         } finally {
             log.info("executeGetData completed in {} ms", System.currentTimeMillis() - startTime);
         }
+    }
+
+    private static void executeRetrieveNetworkObject(String objectType, String query) {
+        new RetrieveNetworkObject(objectType, query).print();
     }
 
     private static void executeSearchRpslObject(String pattern) {
