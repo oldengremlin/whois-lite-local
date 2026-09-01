@@ -343,7 +343,6 @@ public class ParseExtended extends ParseAbstract implements ParseInterface {
      * TEXT columns firstip/lastip compare correctly with &lt;= and &gt;=.
      */
     public static String IPBigIntegerWithZero(String strIPBigInt) {
-        int pad = 40 - strIPBigInt.length();
-        return pad > 0 ? "0".repeat(pad) + strIPBigInt : strIPBigInt;
+        return IpUtils.padIpDecimal(strIPBigInt);
     }
 }

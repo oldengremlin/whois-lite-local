@@ -17,6 +17,7 @@ package net.ukrcom.whoislitelocal;
 
 import inet.ipaddr.IPAddress;
 import inet.ipaddr.IPAddressString;
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import lombok.extern.slf4j.Slf4j;
@@ -99,6 +100,84 @@ public class IpUtils {
         }
         InetAddress inetAddress = InetAddress.getByName(ipAddress);
         return inetAddress.getHostAddress() + "/" + prefixLength;
+    }
+
+    /**
+     * Width of the fixed-width decimal form used by the firstip/lastip columns.
+     * Wide enough for the largest IPv6 address, so plain TEXT comparison orders
+     * addresses numerically.
+     */
+    private static final int IP_DECIMAL_WIDTH = 40;
+
+    /**
+     * Left-pads the decimal form of an address so TEXT comparison of
+     * firstip/lastip matches numeric order.
+     */
+    public static String padIpDecimal(String decimal) {
+        int pad = IP_DECIMAL_WIDTH - decimal.length();
+        return pad > 0 ? "0".repeat(pad) + decimal : decimal;
+    }
+
+    public static String padIpDecimal(BigInteger value) {
+        return padIpDecimal(value.toString());
+    }
+
+    /**
+     * Parses the network value of an RPSL object into the CIDR blocks covering it.
+     *
+     * <p>Handles both notations the database uses: {@code route}, {@code route6}
+     * and {@code inet6num} carry a prefix ({@code 2a04:42c0::/29}), while
+     * {@code inetnum} carries an inclusive range
+     * ({@code 192.0.2.0 - 192.0.2.255}) that need not align to a single prefix.
+     *
+     * @param value the object's primary value
+     * @return covering CIDR blocks, or {@code null} if the value cannot be parsed
+     */
+    public static IPAddress[] rpslValueToCidrBlocks(String value) {
+        if (value == null) {
+            return null;
+        }
+        String v = value.trim();
+        // IPv6 uses ':' as separator, never '-', so a dash always means a range
+        int dash = v.indexOf('-');
+        if (dash > 0) {
+            IPAddress lower = new IPAddressString(v.substring(0, dash).trim()).getAddress();
+            IPAddress upper = new IPAddressString(v.substring(dash + 1).trim()).getAddress();
+            if (lower == null || upper == null || !lower.getIPVersion().equals(upper.getIPVersion())) {
+                return null;
+            }
+            if (lower.compareTo(upper) > 0) {
+                return null;
+            }
+            return lower.toSequentialRange(upper).spanWithPrefixBlocks();
+        }
+        IPAddress address = new IPAddressString(v).getAddress();
+        if (address == null) {
+            return null;
+        }
+        return new IPAddress[]{address.toPrefixBlock()};
+    }
+
+    /**
+     * Number of bits in an address of this version: 32 for IPv4, 128 for IPv6.
+     */
+    public static int addressBits(IPAddress address) {
+        return address.isIPv4() ? 32 : 128;
+    }
+
+    /**
+     * Masks an address down to {@code maskLength} bits.
+     *
+     * <p>Used to enumerate every prefix that could contain an address: looking
+     * each one up by exact (masklen, firstip) turns containment into a handful
+     * of index seeks instead of a range scan over overlapping intervals.
+     */
+    public static BigInteger networkAddress(BigInteger address, int bits, int maskLength) {
+        int hostBits = bits - maskLength;
+        if (hostBits <= 0) {
+            return address;
+        }
+        return address.shiftRight(hostBits).shiftLeft(hostBits);
     }
 
     /**

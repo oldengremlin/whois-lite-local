@@ -86,6 +86,34 @@ public class CommandLineParser {
                             .build()
             )
             .addOption(
+                    Option.builder("rr").longOpt("retrieve-route")
+                            .hasArg()
+                            .argName("addr-or-prefix")
+                            .desc("Get the route objects covering an IPv4 address or prefix, with their organisation.")
+                            .build()
+            )
+            .addOption(
+                    Option.builder("rr6").longOpt("retrieve-route6")
+                            .hasArg()
+                            .argName("addr-or-prefix")
+                            .desc("Get the route6 objects covering an IPv6 address or prefix, with their organisation.")
+                            .build()
+            )
+            .addOption(
+                    Option.builder("rin").longOpt("retrieve-inetnum")
+                            .hasArg()
+                            .argName("addr-or-prefix")
+                            .desc("Get the inetnum objects covering an IPv4 address or prefix, with their organisation and the route objects inside them.")
+                            .build()
+            )
+            .addOption(
+                    Option.builder("ri6n").longOpt("retrieve-inet6num")
+                            .hasArg()
+                            .argName("addr-or-prefix")
+                            .desc("Get the inet6num objects covering an IPv6 address or prefix, with their organisation and the route6 objects inside them.")
+                            .build()
+            )
+            .addOption(
                     Option.builder("sro").longOpt("search-rpsl-object")
                             .hasArg()
                             .argName("pattern")
@@ -176,6 +204,38 @@ public class CommandLineParser {
 
     public String getNetworkOrigin() {
         return checkValue(cmd.getOptionValue("retrieve-network-origin"));
+    }
+
+    public boolean isRetrieveRoute() {
+        return cmd.hasOption("retrieve-route");
+    }
+
+    public String getRetrieveRoute() {
+        return checkValue(cmd.getOptionValue("retrieve-route"));
+    }
+
+    public boolean isRetrieveRoute6() {
+        return cmd.hasOption("retrieve-route6");
+    }
+
+    public String getRetrieveRoute6() {
+        return checkValue(cmd.getOptionValue("retrieve-route6"));
+    }
+
+    public boolean isRetrieveInetnum() {
+        return cmd.hasOption("retrieve-inetnum");
+    }
+
+    public String getRetrieveInetnum() {
+        return checkValue(cmd.getOptionValue("retrieve-inetnum"));
+    }
+
+    public boolean isRetrieveInet6num() {
+        return cmd.hasOption("retrieve-inet6num");
+    }
+
+    public String getRetrieveInet6num() {
+        return checkValue(cmd.getOptionValue("retrieve-inet6num"));
     }
 
     public boolean isSearchRpslObject() {

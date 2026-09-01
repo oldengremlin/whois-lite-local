@@ -31,8 +31,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import inet.ipaddr.IPAddress;
 import lombok.extern.slf4j.Slf4j;
 import static net.ukrcom.whoislitelocal.InitializeDatabase.sha512;
+import net.ukrcom.whoislitelocal.IpUtils;
 
 /**
  *
@@ -99,6 +101,8 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
     private PreparedStatement storeInsertRpslOrigin, storeInsertRpslMntBy;
     private PreparedStatement storeInsertTempRpslOrigin, storeInsertTempRpslMntBy;
     private PreparedStatement storeTempStmt;
+    private PreparedStatement storeInsertRpslNet, storeInsertTempRpslNet;
+    private int batchCountRpslNet = 0;
 
     private final Set<String> allowedKeys = Set.of(
             "aut-num",
@@ -107,8 +111,13 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
             "mntner",
             "role",
             "route",
-            "route6"
+            "route6",
+            "inetnum",
+            "inet6num"
     );
+
+    /** Object types that carry an address range and feed the rpsl_net index. */
+    private static final Set<String> NETWORK_KEYS = Set.of("route", "route6", "inetnum", "inet6num");
     // Distinct object types seen in this file. cleanupOutdatedRpsl needs exactly
     // this — the set of key types to sweep — and nothing more.
     private final Set<String> seenKeyTypes = new HashSet<>();
@@ -151,10 +160,19 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
                             mntby TEXT NOT NULL COLLATE NOCASE,
                             UNIQUE(mntby, key, value)
                         )""");
+                    stmt.execute("""
+                        CREATE TEMPORARY TABLE IF NOT EXISTS temp_rpsl_net (
+                            key TEXT NOT NULL,
+                            value TEXT NOT NULL COLLATE NOCASE,
+                            firstip TEXT NOT NULL,
+                            lastip TEXT NOT NULL,
+                            UNIQUE(key, value, firstip, lastip)
+                        )""");
                     this.needInitializeTempTables = false;
                 } else {
                     // Clear temporary tables for this file
                     stmt.execute("DELETE FROM temp_rpsl");
+                    stmt.execute("DELETE FROM temp_rpsl_net");
                 }
             }
             this.seenKeyTypes.clear();
@@ -175,6 +193,11 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
                          "INSERT OR REPLACE INTO temp_rpsl_origin (origin, route) VALUES (?, ?)");
                  PreparedStatement insertTempRpslMntBy = this.pf.connection.prepareStatement(
                          "INSERT OR REPLACE INTO temp_rpsl_mntby (key, value, mntby) VALUES (?, ?, ?)");
+                 PreparedStatement insertRpslNet = this.pf.connection.prepareStatement(
+                         "INSERT OR IGNORE INTO rpsl_net (key, value, version, masklen, firstip, lastip)"
+                         + " VALUES (?, ?, ?, ?, ?, ?)");
+                 PreparedStatement insertTempRpslNet = this.pf.connection.prepareStatement(
+                         "INSERT OR IGNORE INTO temp_rpsl_net (key, value, firstip, lastip) VALUES (?, ?, ?, ?)");
                  PreparedStatement tempStmt = this.pf.connection.prepareStatement(
                          "INSERT OR IGNORE INTO temp_rpsl (key, value) VALUES (?, ?)")) {
 
@@ -185,6 +208,8 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
                 this.storeInsertRpslMntBy = insertRpslMntBy;
                 this.storeInsertTempRpslOrigin = insertTempRpslOrigin;
                 this.storeInsertTempRpslMntBy = insertTempRpslMntBy;
+                this.storeInsertRpslNet = insertRpslNet;
+                this.storeInsertTempRpslNet = insertTempRpslNet;
                 this.storeTempStmt = tempStmt;
 
                 while ((this.line = reader.readLine()) != null) {
@@ -219,6 +244,12 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
                     this.storeInsertRpslMntBy.executeBatch();
                     this.storeInsertTempRpslMntBy.executeBatch();
                     this.batchCountRpslMntBy = 0;
+                }
+
+                if (this.batchCountRpslNet > 0) {
+                    this.storeInsertRpslNet.executeBatch();
+                    this.storeInsertTempRpslNet.executeBatch();
+                    this.batchCountRpslNet = 0;
                 }
 
                 runIncrementalVacuumSmart(pf);
@@ -328,6 +359,10 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
                 storeRpslOrigin();
             case "role", "aut-num", "as-set" ->
                 storeRpslMntBy();
+        }
+
+        if (NETWORK_KEYS.contains(this.key)) {
+            storeRpslNet();
         }
 
         try {
@@ -519,6 +554,52 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
         }
     }
 
+    /**
+     * Records the address range of the current object so that it can be found by
+     * an address inside it. An inetnum range that does not align to one prefix
+     * yields several rows, all pointing back at the same object.
+     */
+    private void storeRpslNet() {
+        IPAddress[] blocks = IpUtils.rpslValueToCidrBlocks(this.value);
+        if (blocks == null || blocks.length == 0) {
+            log.warn("Can't parse network value of [{} : {}], not indexed for address lookup",
+                    this.key, this.value);
+            return;
+        }
+        try {
+            for (IPAddress block : blocks) {
+                int version = block.isIPv4() ? 4 : 6;
+                int masklen = block.getPrefixLength() != null
+                              ? block.getPrefixLength() : IpUtils.addressBits(block);
+                String firstip = IpUtils.padIpDecimal(block.getLower().getValue());
+                String lastip = IpUtils.padIpDecimal(block.getUpper().getValue());
+
+                this.storeInsertRpslNet.setString(1, this.key);
+                this.storeInsertRpslNet.setString(2, this.value);
+                this.storeInsertRpslNet.setInt(3, version);
+                this.storeInsertRpslNet.setInt(4, masklen);
+                this.storeInsertRpslNet.setString(5, firstip);
+                this.storeInsertRpslNet.setString(6, lastip);
+                this.storeInsertRpslNet.addBatch();
+
+                this.storeInsertTempRpslNet.setString(1, this.key);
+                this.storeInsertTempRpslNet.setString(2, this.value);
+                this.storeInsertTempRpslNet.setString(3, firstip);
+                this.storeInsertTempRpslNet.setString(4, lastip);
+                this.storeInsertTempRpslNet.addBatch();
+
+                if (++this.batchCountRpslNet >= this.BATCH_SIZE) {
+                    this.storeInsertRpslNet.executeBatch();
+                    this.storeInsertTempRpslNet.executeBatch();
+                    this.batchCountRpslNet = 0;
+                }
+            }
+        } catch (SQLException ex) {
+            log.warn("Can't store network range for [{} : {}]: {}", this.key, this.value, ex.getMessage());
+            recordStoreError();
+        }
+    }
+
     private void cleanupRpslOriginAndMntBy() throws SQLException {
         try (PreparedStatement deleteRpslOrigin = this.pf.connection.prepareStatement("DELETE FROM rpsl_origin "
                 + "WHERE NOT EXISTS ( "
@@ -532,9 +613,22 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
                      + "WHERE temp_rpsl_mntby.mntby = rpsl_mntby.mntby "
                      + "  AND temp_rpsl_mntby.key = rpsl_mntby.key "
                      + "  AND temp_rpsl_mntby.value = rpsl_mntby.value"
+                     + ")");
+             PreparedStatement deleteRpslNet = this.pf.connection.prepareStatement("DELETE FROM rpsl_net "
+                     + "WHERE NOT EXISTS ( "
+                     + "SELECT 1 FROM temp_rpsl_net "
+                     + "WHERE temp_rpsl_net.key = rpsl_net.key "
+                     + "  AND temp_rpsl_net.value = rpsl_net.value "
+                     + "  AND temp_rpsl_net.firstip = rpsl_net.firstip "
+                     + "  AND temp_rpsl_net.lastip = rpsl_net.lastip"
                      + ")")) {
 
             int deleted;
+
+            deleted = deleteRpslNet.executeUpdate();
+            if (deleted > 0) {
+                log.info("Deleted {} outdated rpsl_net", deleted);
+            }
 
             deleted = deleteRpslOrigin.executeUpdate();
             if (deleted > 0) {
