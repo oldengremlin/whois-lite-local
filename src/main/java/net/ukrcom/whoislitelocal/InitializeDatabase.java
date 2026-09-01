@@ -106,22 +106,22 @@ public class InitializeDatabase {
                         UNIQUE(origin, route)
                     )""");
                 // Numeric ranges of the address-bearing RPSL objects (route, route6,
-                // inetnum, inet6num). One row per CIDR block: an inetnum range need
-                // not align to a single prefix, so it can produce several.
+                // inetnum, inet6num). One row per CIDR block: an inetnum carries a
+                // range rather than a prefix, and a range need not align to one —
+                // 20.33.0.0 - 20.128.255.255 covers seven blocks of six different
+                // sizes — so one object can produce several rows.
                 //
-                // masklen is stored so that "which objects contain this address" can
-                // be answered by masking the address to each possible prefix length
-                // and looking those up exactly. These objects overlap heavily — a /29
-                // and a /48 inside it both exist — so the nearest-below seek used for
-                // RIR allocations does not apply, and a firstip/lastip range predicate
-                // degenerates into scanning a large part of the table.
+                // Only the bounds are stored. A mask length is a property of an
+                // individual block, not of the object, and storing it would be both
+                // redundant (it follows from the bounds) and misleading. Lookups do
+                // not need it: see RetrieveNetworkObject.
+                migrateRpslNetSchema(stmt);
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS rpsl_net (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         key TEXT NOT NULL,
                         value TEXT NOT NULL COLLATE NOCASE,
                         version INTEGER NOT NULL,
-                        masklen INTEGER NOT NULL,
                         firstip TEXT NOT NULL,
                         lastip TEXT NOT NULL,
                         UNIQUE(key, value, firstip, lastip)
@@ -183,16 +183,9 @@ public class InitializeDatabase {
                     } else {
                         log.info("Index idx_ipv6_range already exists, skipping creation");
                     }
-                    // Exact-prefix lookups: "which objects contain this address"
-                    checkStmt.setString(1, "idx_rpsl_net_exact");
-                    rs = checkStmt.executeQuery();
-                    if (!rs.next()) {
-                        stmt.execute("CREATE INDEX 'idx_rpsl_net_exact' ON 'rpsl_net' ('version', 'masklen', 'firstip')");
-                        log.info("Created index idx_rpsl_net_exact on rpsl_net table");
-                    } else {
-                        log.info("Index idx_rpsl_net_exact already exists, skipping creation");
-                    }
-                    // Bounded range scan: "which objects fall inside this one"
+                    // Serves both directions: exact (firstip, lastip) probes that find
+                    // the object covering an address, and the bounded range scan that
+                    // finds the objects lying inside one.
                     checkStmt.setString(1, "idx_rpsl_net_range");
                     rs = checkStmt.executeQuery();
                     if (!rs.next()) {
@@ -286,6 +279,29 @@ public class InitializeDatabase {
             stmt.execute("DROP INDEX IF EXISTS " + name);
             log.info("Dropped index {} (superseded by the covering range index)", name);
         }
+    }
+
+    /**
+     * Drops an rpsl_net left over from the first release of the table, which
+     * carried a masklen column. The table is rebuilt from the dump on every run,
+     * so recreating it loses nothing that the next --get-data does not restore.
+     */
+    private void migrateRpslNetSchema(java.sql.Statement stmt) throws SQLException {
+        boolean hasMasklen = false;
+        try (ResultSet rs = stmt.executeQuery("PRAGMA table_info(rpsl_net)")) {
+            while (rs.next()) {
+                if ("masklen".equalsIgnoreCase(rs.getString("name"))) {
+                    hasMasklen = true;
+                    break;
+                }
+            }
+        }
+        if (!hasMasklen) {
+            return;
+        }
+        stmt.execute("DROP TABLE rpsl_net");
+        log.warn("Dropped the previous rpsl_net (it stored a per-object mask length, which a range "
+                + "such as 20.33.0.0 - 20.128.255.255 does not have). It is rebuilt on the next --get-data.");
     }
 
     /**

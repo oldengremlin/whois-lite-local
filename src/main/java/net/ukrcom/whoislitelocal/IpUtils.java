@@ -168,9 +168,9 @@ public class IpUtils {
     /**
      * Masks an address down to {@code maskLength} bits.
      *
-     * <p>Used to enumerate every prefix that could contain an address: looking
-     * each one up by exact (masklen, firstip) turns containment into a handful
-     * of index seeks instead of a range scan over overlapping intervals.
+     * <p>Used to enumerate the prefixes that could contain an address. Probing
+     * each one by its exact bounds turns containment into a handful of index
+     * seeks instead of a backwards scan over overlapping intervals.
      */
     public static BigInteger networkAddress(BigInteger address, int bits, int maskLength) {
         int hostBits = bits - maskLength;

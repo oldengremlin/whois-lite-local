@@ -194,8 +194,8 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
                  PreparedStatement insertTempRpslMntBy = this.pf.connection.prepareStatement(
                          "INSERT OR REPLACE INTO temp_rpsl_mntby (key, value, mntby) VALUES (?, ?, ?)");
                  PreparedStatement insertRpslNet = this.pf.connection.prepareStatement(
-                         "INSERT OR IGNORE INTO rpsl_net (key, value, version, masklen, firstip, lastip)"
-                         + " VALUES (?, ?, ?, ?, ?, ?)");
+                         "INSERT OR IGNORE INTO rpsl_net (key, value, version, firstip, lastip)"
+                         + " VALUES (?, ?, ?, ?, ?)");
                  PreparedStatement insertTempRpslNet = this.pf.connection.prepareStatement(
                          "INSERT OR IGNORE INTO temp_rpsl_net (key, value, firstip, lastip) VALUES (?, ?, ?, ?)");
                  PreparedStatement tempStmt = this.pf.connection.prepareStatement(
@@ -569,17 +569,14 @@ public class ParseRpsl extends ParseAbstract implements ParseInterface {
         try {
             for (IPAddress block : blocks) {
                 int version = block.isIPv4() ? 4 : 6;
-                int masklen = block.getPrefixLength() != null
-                              ? block.getPrefixLength() : IpUtils.addressBits(block);
                 String firstip = IpUtils.padIpDecimal(block.getLower().getValue());
                 String lastip = IpUtils.padIpDecimal(block.getUpper().getValue());
 
                 this.storeInsertRpslNet.setString(1, this.key);
                 this.storeInsertRpslNet.setString(2, this.value);
                 this.storeInsertRpslNet.setInt(3, version);
-                this.storeInsertRpslNet.setInt(4, masklen);
-                this.storeInsertRpslNet.setString(5, firstip);
-                this.storeInsertRpslNet.setString(6, lastip);
+                this.storeInsertRpslNet.setString(4, firstip);
+                this.storeInsertRpslNet.setString(5, lastip);
                 this.storeInsertRpslNet.addBatch();
 
                 this.storeInsertTempRpslNet.setString(1, this.key);
