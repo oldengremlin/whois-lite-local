@@ -44,13 +44,17 @@ import net.ukrcom.whoislitelocal.IpUtils;
 @Slf4j
 public class RetrieveNetworkObject {
 
-    /**
-     * One RPSL object found by the lookup, kept with its mask length so results
-     * can be printed from the largest enclosing block down to the most specific.
-     */
-    private record Match(String key, String value, int masklen) {
+    /** One RPSL object found by the lookup, with the block bounds it matched on. */
+    private record Match(String key, String value, String firstip, String lastip) {
 
     }
+
+    /**
+     * Cap on how many route objects are listed inside one inetnum. Without it, an
+     * address that only the IANA 0.0.0.0/0 placeholder covers would print every
+     * route object in the database.
+     */
+    private static final int MAX_CONTAINED_ROUTES = 500;
 
     private final String objectType;
     private final String query;
@@ -74,15 +78,11 @@ public class RetrieveNetworkObject {
         }
 
         try (Connection conn = DriverManager.getConnection(Config.getDBUrl())) {
-            List<Match> matches = findCovering(conn, address, version);
+            List<Match> matches = findMostSpecific(conn, address, version);
             if (matches.isEmpty()) {
                 log.info("No {} object covers {}", this.objectType, this.query);
                 return this;
             }
-            // Least specific first: the enclosing allocation gives context before
-            // the more specific objects inside it.
-            matches.sort((a, b) -> Integer.compare(a.masklen(), b.masklen()));
-
             for (Match match : matches) {
                 String block = printObject(conn, match);
                 printOrg(conn, block);
@@ -96,6 +96,13 @@ public class RetrieveNetworkObject {
         return this;
     }
 
+    private boolean coversWholeAddressSpace(Match match, int version) {
+        int bits = version == 4 ? 32 : 128;
+        BigInteger max = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE);
+        return match.firstip().equals(IpUtils.padIpDecimal(BigInteger.ZERO))
+                && match.lastip().equals(IpUtils.padIpDecimal(max));
+    }
+
     private boolean isInetnum() {
         return "inetnum".equals(this.objectType) || "inet6num".equals(this.objectType);
     }
@@ -106,30 +113,43 @@ public class RetrieveNetworkObject {
     }
 
     /**
-     * Finds every object of the requested type whose range contains the address.
+     * Finds the narrowest object of the requested type that covers the address.
      *
-     * <p>These objects overlap by design — a /29 and a /48 inside it both exist —
-     * so a {@code firstip <= ? AND lastip >= ?} predicate would have to scan a
-     * large part of the table. Instead the address is masked to each possible
-     * prefix length and looked up exactly, which is one index seek per length.
+     * <p>Returning every covering object is not useful: the RIPE database holds a
+     * placeholder inetnum for 0.0.0.0/0, so every IPv4 query would drag in "the
+     * whole IPv4 address space" along with whatever lies inside it. Whois answers
+     * with the most specific match, and so does this.
+     *
+     * <p>Finding it by {@code firstip <= ? AND lastip >= ? ORDER BY firstip DESC
+     * LIMIT 1} is correct but scans the index backwards, all the way to the
+     * 0.0.0.0/0 row when nothing narrower covers the address — about 200x slower
+     * in that case. Every stored row is a CIDR block, so both of its bounds follow
+     * from an address and a prefix length: walking prefix lengths from the most
+     * specific down and probing (firstip, lastip) exactly turns the search into at
+     * most 33 (or 129) index seeks, and it stops at the first hit.
      */
-    private List<Match> findCovering(Connection conn, IPAddress address, int version) throws SQLException {
+    private List<Match> findMostSpecific(Connection conn, IPAddress address, int version) throws SQLException {
         BigInteger value = address.getLower().getValue();
         int bits = IpUtils.addressBits(address);
         List<Match> matches = new ArrayList<>();
 
         try (PreparedStatement stmt = conn.prepareStatement(
-                "SELECT value FROM rpsl_net WHERE version = ? AND masklen = ? AND firstip = ? AND key = ?")) {
-            for (int masklen = 0; masklen <= bits; masklen++) {
-                String network = IpUtils.padIpDecimal(IpUtils.networkAddress(value, bits, masklen));
+                "SELECT value FROM rpsl_net WHERE version = ? AND firstip = ? AND lastip = ? AND key = ?")) {
+            for (int masklen = bits; masklen >= 0; masklen--) {
+                BigInteger network = IpUtils.networkAddress(value, bits, masklen);
+                BigInteger last = network.add(BigInteger.ONE.shiftLeft(bits - masklen)).subtract(BigInteger.ONE);
                 stmt.setInt(1, version);
-                stmt.setInt(2, masklen);
-                stmt.setString(3, network);
+                stmt.setString(2, IpUtils.padIpDecimal(network));
+                stmt.setString(3, IpUtils.padIpDecimal(last));
                 stmt.setString(4, this.objectType);
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
-                        matches.add(new Match(this.objectType, rs.getString("value"), masklen));
+                        matches.add(new Match(this.objectType, rs.getString("value"),
+                                IpUtils.padIpDecimal(network), IpUtils.padIpDecimal(last)));
                     }
+                }
+                if (!matches.isEmpty()) {
+                    return matches;
                 }
             }
         }
@@ -193,42 +213,40 @@ public class RetrieveNetworkObject {
     private void printContainedRoutes(Connection conn, Match match, int version) throws
             SQLException {
         String routeKey = version == 4 ? "route" : "route6";
-        String firstip = null;
-        String lastip = null;
-        try (PreparedStatement stmt = conn.prepareStatement(
-                "SELECT firstip, lastip FROM rpsl_net WHERE key = ? AND value = ? ORDER BY firstip")) {
-            stmt.setString(1, match.key());
-            stmt.setString(2, match.value());
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    // An inetnum range can span several blocks; take the outer bounds
-                    String f = rs.getString("firstip");
-                    String l = rs.getString("lastip");
-                    if (firstip == null || f.compareTo(firstip) < 0) {
-                        firstip = f;
-                    }
-                    if (lastip == null || l.compareTo(lastip) > 0) {
-                        lastip = l;
-                    }
-                }
-            }
-        }
-        if (firstip == null) {
+        // The RIPE database carries a placeholder inetnum for the entire address
+        // space, which is what covers an address that is not assigned to anyone.
+        // "Everything announced on the internet" is not an answer to any question,
+        // so stop rather than list it.
+        if (coversWholeAddressSpace(match, version)) {
+            log.info("{} is covered only by the whole-address-space placeholder {} — "
+                    + "the address is not assigned to any organisation",
+                    this.query, match.value());
             return;
         }
+        // The bounds of the block the address matched on, not of the whole object:
+        // an inetnum spanning several blocks is answered for the one that applies.
         try (PreparedStatement stmt = conn.prepareStatement(
                 "SELECT DISTINCT r.block FROM rpsl_net n "
                 + "JOIN rpsl r ON r.key = n.key AND r.value = n.value "
                 + "WHERE n.version = ? AND n.key = ? AND n.firstip >= ? AND n.lastip <= ? "
-                + "ORDER BY n.firstip, n.masklen")) {
+                + "ORDER BY n.firstip LIMIT ?")) {
             stmt.setInt(1, version);
             stmt.setString(2, routeKey);
-            stmt.setString(3, firstip);
-            stmt.setString(4, lastip);
+            stmt.setString(3, match.firstip());
+            stmt.setString(4, match.lastip());
+            stmt.setInt(5, MAX_CONTAINED_ROUTES + 1);
+            int printed = 0;
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
+                    if (printed == MAX_CONTAINED_ROUTES) {
+                        log.warn("More than {} {} objects lie inside {} — listing stopped. "
+                                + "Query a narrower prefix to see the rest.",
+                                MAX_CONTAINED_ROUTES, routeKey, match.value());
+                        break;
+                    }
                     Config.printBlock(rs.getString("block"));
                     System.out.println();
+                    printed++;
                 }
             }
         }
