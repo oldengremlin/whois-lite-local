@@ -34,6 +34,7 @@ import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
 
@@ -42,6 +43,7 @@ import net.ukrcom.whoislitelocal.Config;
  * @author olden
  */
 @Slf4j
+@RequiredArgsConstructor
 public class ProcessFiles {
 
     private record DownloadedFile(String url, Path tempFile, String lastModified, long fileSize) {
@@ -51,6 +53,14 @@ public class ProcessFiles {
     /** Attempts per file, and the first back-off between them (doubling each time). */
     private static final int DOWNLOAD_ATTEMPTS = 3;
     private static final long RETRY_BACKOFF_MILLIS = 2_000;
+
+    /**
+     * Re-fetch and re-parse every file, ignoring the recorded Last-Modified and
+     * size. Needed whenever the parser changes what it extracts: the data on the
+     * mirror is unchanged, so without this the run skips every download and the
+     * new logic never sees the files.
+     */
+    private final boolean force;
 
     protected Connection connection;
     protected String processUrl;
@@ -187,6 +197,10 @@ public class ProcessFiles {
 
     private boolean shouldDownloadFile(Connection readConn) throws SQLException, IOException,
                                                                    URISyntaxException {
+        if (this.force) {
+            log.info("Forcing download of {}", this.processUrl);
+            return true;
+        }
         try (PreparedStatement stmt = readConn.prepareStatement(
                 "SELECT last_modified, file_size FROM file_metadata WHERE url = ?")) {
             stmt.setString(1, this.processUrl);
