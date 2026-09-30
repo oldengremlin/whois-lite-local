@@ -39,7 +39,7 @@ public class WhoisLiteLocal {
                 CommandLineParser.printHelp();
                 System.exit(0xff);
             } else if (parser.isGetData()) {
-                executeGetData(parser.isVacuum());
+                executeGetData(parser.isVacuum(), parser.isForce());
             } else if (parser.isRetrieveAutNum()) {
                 executeRetrieveAutNum(parser.getAutNum());
             } else if (parser.isRetrieveAsSet()) {
@@ -76,9 +76,12 @@ public class WhoisLiteLocal {
         }
     }
 
-    private static void executeGetData(boolean vacuum) {
+    private static void executeGetData(boolean vacuum, boolean force) {
         long startTime = System.currentTimeMillis();
         int skipped = 0;
+        if (force) {
+            log.info("--force: re-downloading and re-parsing every file, ignoring recorded metadata");
+        }
         try {
             new InitializeDatabase().createTables();
 
@@ -89,9 +92,9 @@ public class WhoisLiteLocal {
                 }
                 sharedConn.setAutoCommit(false);
 
-                ProcessFiles extended = new ProcessFiles();
-                ProcessFiles asnames = new ProcessFiles();
-                ProcessFiles geolocations = new ProcessFiles();
+                ProcessFiles extended = new ProcessFiles(force);
+                ProcessFiles asnames = new ProcessFiles(force);
+                ProcessFiles geolocations = new ProcessFiles(force);
 
                 try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                     Future<Void> f1 = executor.submit((Callable<Void>) () -> {
@@ -139,7 +142,7 @@ public class WhoisLiteLocal {
                         + geolocations.getFailedDownloads();
             }
 
-            ProcessFiles ripedb = new ProcessFiles();
+            ProcessFiles ripedb = new ProcessFiles(force);
             ripedb.process("ripedb", new ParseRpsl());
             skipped += ripedb.getFailedDownloads();
 

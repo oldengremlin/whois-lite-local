@@ -121,6 +121,11 @@ public class CommandLineParser {
                             .build()
             )
             .addOption(
+                    Option.builder("f").longOpt("force")
+                            .desc("Re-download and re-parse every file, ignoring the recorded Last-Modified and size. Use after a change to what the parser extracts.")
+                            .build()
+            )
+            .addOption(
                     Option.builder("vc").longOpt("vacuum")
                             .desc("Run full VACUUM to compact the database (can be combined with --get-data or used standalone)")
                             .build()
@@ -143,7 +148,30 @@ public class CommandLineParser {
     }
 
     public boolean isGetData() {
-        return cmd.hasOption("get-data") || cmd.getOptions().length == 0;
+        return cmd.hasOption("get-data") || cmd.getOptions().length == 0 || onlyForceModifiers();
+    }
+
+    /**
+     * True when the command line carries nothing but --force, optionally with
+     * --vacuum. Neither means anything on its own, and --force modifies only
+     * --get-data, so that is plainly what was meant. --vacuum by itself keeps
+     * its standalone meaning and is deliberately not covered here.
+     */
+    private boolean onlyForceModifiers() {
+        if (!cmd.hasOption("force")) {
+            return false;
+        }
+        for (Option option : cmd.getOptions()) {
+            String name = option.getLongOpt();
+            if (!"force".equals(name) && !"vacuum".equals(name)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean isForce() {
+        return cmd.hasOption("force");
     }
 
     public boolean isHelpRequested() {
