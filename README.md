@@ -20,6 +20,12 @@ mvn clean install
 > ```
 > Щоб не вводити щоразу: `echo 'MAVEN_OPTS="-Djava.net.preferIPv4Stack=true"' >> ~/.mavenrc`
 
+> **Той самий прапор може знадобитися й під час роботи.** Якщо `--get-data` падає з `SSLException: (bad_record_mac) Tag mismatch` або обривами на великих файлах, тоді як `curl` качає їх без проблем, спробуйте:
+> ```bash
+> java -Djava.net.preferIPv4Stack=true -jar WhoisLiteLocal.jar --get-data
+> ```
+> Java за замовчуванням віддає перевагу IPv6, а `curl` застосовує Happy Eyeballs і може мовчки піти через IPv4 — тому несправний IPv6-шлях виявляється лише в Java. Завантаження й так повторюється тричі, але якщо шлях зламаний постійно, повтори не допоможуть.
+
 ## Конфігурація
 
 Перед збіркою створіть файл `src/main/resources/whoislitelocal.properties`
