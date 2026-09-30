@@ -48,11 +48,26 @@ public class ProcessFiles {
 
     }
 
+    /** Attempts per file, and the first back-off between them (doubling each time). */
+    private static final int DOWNLOAD_ATTEMPTS = 3;
+    private static final long RETRY_BACKOFF_MILLIS = 2_000;
+
     protected Connection connection;
     protected String processUrl;
     protected Path tempFile;
     protected String lastModified;
     protected long fileSize;
+
+    /**
+     * Files this instance could not fetch. A run that skipped a download is not
+     * a successful run, and saying so at the end keeps a stale dataset from
+     * looking like a fresh one.
+     */
+    private int failedDownloads = 0;
+
+    public int getFailedDownloads() {
+        return this.failedDownloads;
+    }
 
     public ProcessFiles process(String paramUrls, ParseInterface parseFile) throws
             IOException, SQLException, URISyntaxException {
@@ -204,22 +219,68 @@ public class ProcessFiles {
             return result;
         }
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            // Keep each future next to its URL so a failure can name the file it
+            // was for; "Download failed" on its own says nothing useful.
+            List<String> ordered = new ArrayList<>(urls);
             List<Future<DownloadedFile>> futures = new ArrayList<>(urls.size());
-            for (String url : urls) {
-                futures.add(executor.submit(() -> downloadOne(url)));
+            for (String url : ordered) {
+                futures.add(executor.submit(() -> downloadWithRetry(url)));
             }
-            for (Future<DownloadedFile> f : futures) {
+            for (int i = 0; i < futures.size(); i++) {
+                String url = ordered.get(i);
                 try {
-                    result.add(f.get());
+                    result.add(futures.get(i).get());
                 } catch (ExecutionException e) {
-                    log.error("Download failed", e.getCause());
+                    this.failedDownloads++;
+                    log.error("Giving up on {} — it will be retried on the next run", url, e.getCause());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    log.error("Download interrupted", e);
+                    this.failedDownloads++;
+                    log.error("Download of {} interrupted", url, e);
                 }
             }
         }
         return result;
+    }
+
+    /**
+     * Downloads a file, retrying transient transport failures.
+     *
+     * <p>These are multi-hundred-megabyte transfers held open for tens of
+     * seconds, so an occasional reset, timeout or TLS record failure is normal
+     * rather than exceptional. Without a retry one such failure silently skipped
+     * the file for the whole run: {@code file_metadata} is left untouched, so
+     * nothing is corrupted, but the data simply stays stale until the next run.
+     *
+     * <p>Each attempt opens a fresh connection — a failed TLS session cannot be
+     * resumed mid-stream — and the partial temp file is removed by
+     * {@link #downloadOne}, so an attempt never inherits the previous one's bytes.
+     */
+    private DownloadedFile downloadWithRetry(String url) throws URISyntaxException, IOException {
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+            try {
+                return downloadOne(url);
+            } catch (IOException e) {
+                lastFailure = e;
+                if (attempt == DOWNLOAD_ATTEMPTS) {
+                    break;
+                }
+                long backoffMillis = RETRY_BACKOFF_MILLIS << (attempt - 1);
+                log.warn("Download of {} failed on attempt {}/{} ({}: {}) — retrying in {} ms",
+                        url, attempt, DOWNLOAD_ATTEMPTS, e.getClass().getSimpleName(), e.getMessage(),
+                        backoffMillis);
+                try {
+                    Thread.sleep(backoffMillis);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    e.addSuppressed(interrupted);
+                    throw e;
+                }
+            }
+        }
+        throw new IOException("Download of " + url + " failed after " + DOWNLOAD_ATTEMPTS
+                + " attempts", lastFailure);
     }
 
     private DownloadedFile downloadOne(String url) throws URISyntaxException, IOException {

@@ -78,6 +78,7 @@ public class WhoisLiteLocal {
 
     private static void executeGetData(boolean vacuum) {
         long startTime = System.currentTimeMillis();
+        int skipped = 0;
         try {
             new InitializeDatabase().createTables();
 
@@ -88,17 +89,21 @@ public class WhoisLiteLocal {
                 }
                 sharedConn.setAutoCommit(false);
 
+                ProcessFiles extended = new ProcessFiles();
+                ProcessFiles asnames = new ProcessFiles();
+                ProcessFiles geolocations = new ProcessFiles();
+
                 try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                     Future<Void> f1 = executor.submit((Callable<Void>) () -> {
-                        new ProcessFiles().process("urls_extended", new ParseExtended(), sharedConn);
+                        extended.process("urls_extended", new ParseExtended(), sharedConn);
                         return null;
                     });
                     Future<Void> f2 = executor.submit((Callable<Void>) () -> {
-                        new ProcessFiles().process("asnames", new ParseAsnames(), sharedConn);
+                        asnames.process("asnames", new ParseAsnames(), sharedConn);
                         return null;
                     });
                     Future<Void> f3 = executor.submit((Callable<Void>) () -> {
-                        new ProcessFiles().process("geolocations", new ParseGeolocations(), sharedConn);
+                        geolocations.process("geolocations", new ParseGeolocations(), sharedConn);
                         return null;
                     });
 
@@ -129,9 +134,14 @@ public class WhoisLiteLocal {
                 }
 
                 sharedConn.commit();
+                skipped += extended.getFailedDownloads()
+                        + asnames.getFailedDownloads()
+                        + geolocations.getFailedDownloads();
             }
 
-            new ProcessFiles().process("ripedb", new ParseRpsl());
+            ProcessFiles ripedb = new ProcessFiles();
+            ripedb.process("ripedb", new ParseRpsl());
+            skipped += ripedb.getFailedDownloads();
 
             if (vacuum) {
                 executeVacuum();
@@ -144,7 +154,14 @@ public class WhoisLiteLocal {
         } catch (URISyntaxException e) {
             log.error("Main process (URISyntaxException)", e);
         } finally {
-            log.info("executeGetData completed in {} ms", System.currentTimeMillis() - startTime);
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (skipped > 0) {
+                log.warn("executeGetData finished in {} ms, but {} file(s) could not be downloaded. "
+                        + "Their data is unchanged from the previous run and will be retried next time.",
+                        elapsed, skipped);
+            } else {
+                log.info("executeGetData completed in {} ms", elapsed);
+            }
         }
     }
 
