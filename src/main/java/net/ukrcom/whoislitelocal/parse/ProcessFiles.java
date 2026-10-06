@@ -34,6 +34,7 @@ import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
@@ -49,10 +50,6 @@ public class ProcessFiles {
     private record DownloadedFile(String url, Path tempFile, String lastModified, long fileSize) {
 
     }
-
-    /** Attempts per file, and the first back-off between them (doubling each time). */
-    private static final int DOWNLOAD_ATTEMPTS = 3;
-    private static final long RETRY_BACKOFF_MILLIS = 2_000;
 
     /**
      * Re-fetch and re-parse every file, ignoring the recorded Last-Modified and
@@ -271,19 +268,20 @@ public class ProcessFiles {
      * {@link #downloadOne}, so an attempt never inherits the previous one's bytes.
      */
     private DownloadedFile downloadWithRetry(String url) throws URISyntaxException, IOException {
+        int attempts = Config.getDownloadAttempts();
         IOException lastFailure = null;
-        for (int attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+        for (int attempt = 1; attempt <= attempts; attempt++) {
             try {
                 return downloadOne(url);
             } catch (IOException e) {
                 lastFailure = e;
-                if (attempt == DOWNLOAD_ATTEMPTS) {
+                if (attempt == attempts) {
                     break;
                 }
-                long backoffMillis = RETRY_BACKOFF_MILLIS << (attempt - 1);
-                log.warn("Download of {} failed on attempt {}/{} ({}: {}) — retrying in {} ms",
-                        url, attempt, DOWNLOAD_ATTEMPTS, e.getClass().getSimpleName(), e.getMessage(),
-                        backoffMillis);
+                long backoffMillis = nextBackoff(attempt);
+                log.warn("Download of {} failed on attempt {}/{} ({}: {}) — retrying in {} s",
+                        url, attempt, attempts, e.getClass().getSimpleName(), e.getMessage(),
+                        backoffMillis / 1000);
                 try {
                     Thread.sleep(backoffMillis);
                 } catch (InterruptedException interrupted) {
@@ -293,8 +291,21 @@ public class ProcessFiles {
                 }
             }
         }
-        throw new IOException("Download of " + url + " failed after " + DOWNLOAD_ATTEMPTS
-                + " attempts", lastFailure);
+        throw new IOException("Download of " + url + " failed after " + attempts + " attempts",
+                lastFailure);
+    }
+
+    /**
+     * Doubling back-off with up to 25% of random jitter.
+     *
+     * <p>The jitter matters because the usual reason a public mirror refuses a
+     * download is that everyone's nightly job is pulling the same file at the same
+     * minute. A fixed schedule would send every one of those clients back at the
+     * same instant, repeatedly colliding in the same saturated window.
+     */
+    private long nextBackoff(int attempt) {
+        long base = Config.getDownloadRetryBaseMillis() << (attempt - 1);
+        return base + (long) (ThreadLocalRandom.current().nextDouble() * 0.25 * base);
     }
 
     private DownloadedFile downloadOne(String url) throws URISyntaxException, IOException {

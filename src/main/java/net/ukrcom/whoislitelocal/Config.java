@@ -43,6 +43,15 @@ public class Config {
     // inflates without limit.
     private static final long MAX_DOWNLOAD_BYTES = 8L * 1024 * 1024 * 1024;      // 8 GiB compressed
     private static final long MAX_DECOMPRESSED_BYTES = 64L * 1024 * 1024 * 1024; // 64 GiB expanded
+    // Retry budget for one file. The failures that actually occur against a public
+    // mirror are not instantaneous blips: a stalled read, then refused connections,
+    // typically because the mirror is saturated — around 01:00 every cron job on
+    // the internet reaches for the same files. Seconds of patience are useless
+    // there, so the schedule below spans minutes: 15s, 30s, 60s, 120s between five
+    // attempts, about four minutes in all. That is proportionate for a job whose
+    // successful run already takes a quarter of an hour.
+    private static final int DOWNLOAD_ATTEMPTS = 5;
+    private static final long DOWNLOAD_RETRY_BASE_MILLIS = 15_000;
 
     public static String getDBUrl() {
         return DB_URL;
@@ -70,6 +79,14 @@ public class Config {
 
     public static long getMaxDecompressedBytes() {
         return MAX_DECOMPRESSED_BYTES;
+    }
+
+    public static int getDownloadAttempts() {
+        return DOWNLOAD_ATTEMPTS;
+    }
+
+    public static long getDownloadRetryBaseMillis() {
+        return DOWNLOAD_RETRY_BASE_MILLIS;
     }
 
     // SHA-512 hashes of blocks already printed in this JVM run.
