@@ -52,6 +52,9 @@ public class Config {
     // successful run already takes a quarter of an hour.
     private static final int DOWNLOAD_ATTEMPTS = 5;
     private static final long DOWNLOAD_RETRY_BASE_MILLIS = 15_000;
+    // Hard ceiling for one transfer, for the external-fetch fallback. Generous:
+    // ripe.db.gz is ~350 MB and a throttled mirror can take a long while.
+    private static final int DOWNLOAD_MAX_SECONDS = 3_600;
 
     public static String getDBUrl() {
         return DB_URL;
@@ -87,6 +90,10 @@ public class Config {
 
     public static long getDownloadRetryBaseMillis() {
         return DOWNLOAD_RETRY_BASE_MILLIS;
+    }
+
+    public static int getDownloadMaxSeconds() {
+        return DOWNLOAD_MAX_SECONDS;
     }
 
     // SHA-512 hashes of blocks already printed in this JVM run.

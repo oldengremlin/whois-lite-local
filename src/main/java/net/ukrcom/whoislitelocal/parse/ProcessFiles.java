@@ -20,6 +20,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -291,8 +292,124 @@ public class ProcessFiles {
                 }
             }
         }
-        throw new IOException("Download of " + url + " failed after " + attempts + " attempts",
-                lastFailure);
+        // Every in-process attempt is spent. curl is worth one last try rather
+        // than losing the file for the whole run: it races IPv4 against IPv6
+        // (Happy Eyeballs, which HttpURLConnection does not do), and it uses a
+        // different TLS stack, so a failure specific to either is not repeated.
+        // Observed twice: curl fetched this file at full speed while the Java
+        // path failed.
+        try {
+            log.warn("All {} in-process attempts for {} failed — falling back to curl", attempts, url);
+            return downloadWithCurl(url);
+        } catch (IOException curlFailure) {
+            lastFailure.addSuppressed(curlFailure);
+        }
+        throw new IOException("Download of " + url + " failed after " + attempts
+                + " attempts and a curl fallback", lastFailure);
+    }
+
+    /**
+     * Fetches a file with the system curl, as a last resort.
+     *
+     * <p>Only the transfer is delegated. curl writes the bytes verbatim to the
+     * same kind of temp file the in-process path produces, and parsing and
+     * decompression stay where they are: {@link ParseAbstract#tryDecompress}
+     * recognises the format from the content, not from how it arrived.
+     *
+     * <p>The safety rules of the in-process path are kept rather than bypassed:
+     * the URL goes through {@link #openableUri} first, so https-only still holds;
+     * {@code --max-filesize} applies the same size cap; redirects are confined to
+     * https; and the command is built as an argument list for ProcessBuilder, so
+     * no shell ever parses the URL.
+     */
+    private DownloadedFile downloadWithCurl(String url) throws URISyntaxException, IOException {
+        URI uri = openableUri(url);
+        Path target = Files.createTempFile("whoislite_", ".txt");
+        Path headerDump = Files.createTempFile("whoislite_hdr_", ".txt");
+        try {
+            List<String> command = new ArrayList<>(List.of(
+                    "curl", "--fail", "--location", "--silent", "--show-error",
+                    "--connect-timeout", String.valueOf(Config.getConnectTimeout() / 1000),
+                    "--max-time", String.valueOf(Config.getDownloadMaxSeconds()),
+                    // Abort a transfer that has effectively stalled, mirroring the
+                    // read timeout the in-process path sets on its socket.
+                    "--speed-limit", "1024",
+                    "--speed-time", String.valueOf(Config.getReadTimeout() / 1000),
+                    "--max-filesize", String.valueOf(Config.getMaxDownloadBytes()),
+                    "--dump-header", headerDump.toString(),
+                    "--output", target.toString()));
+            if ("https".equalsIgnoreCase(uri.getScheme())) {
+                command.add("--proto-redir");
+                command.add("=https");
+            }
+            command.add(uri.toString());
+
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String curlOutput;
+            try (InputStream out = process.getInputStream()) {
+                curlOutput = new String(out.readAllBytes(), StandardCharsets.UTF_8).trim();
+            }
+            int exitCode;
+            try {
+                exitCode = process.waitFor();
+            } catch (InterruptedException e) {
+                process.destroyForcibly();
+                Thread.currentThread().interrupt();
+                throw new IOException("curl fetch of " + url + " was interrupted", e);
+            }
+            if (exitCode != 0) {
+                throw new IOException("curl exited with status " + exitCode + " for " + url
+                        + (curlOutput.isEmpty() ? "" : ": " + curlOutput));
+            }
+
+            long onDisk = Files.size(target);
+            if (onDisk == 0) {
+                throw new IOException("curl produced an empty file for " + url);
+            }
+            // Record the same figures the in-process path records, so the
+            // unchanged-file check behaves identically on the next run.
+            String lastModified = lastHeaderValue(headerDump, "last-modified");
+            String contentLength = lastHeaderValue(headerDump, "content-length");
+            long reportedSize = onDisk;
+            if (!contentLength.isEmpty()) {
+                try {
+                    reportedSize = Long.parseLong(contentLength);
+                } catch (NumberFormatException ignore) {
+                    // keep the on-disk size
+                }
+            }
+            log.info("curl fetched {} ({} bytes) to {}", url, onDisk, target);
+            return new DownloadedFile(url, target, lastModified, reportedSize);
+        } catch (IOException | RuntimeException e) {
+            try {
+                Files.deleteIfExists(target);
+            } catch (IOException suppressed) {
+                e.addSuppressed(suppressed);
+            }
+            throw e;
+        } finally {
+            try {
+                Files.deleteIfExists(headerDump);
+            } catch (IOException ignore) {
+                // a leftover header dump is harmless
+            }
+        }
+    }
+
+    /**
+     * Returns the last value of a header in a curl dump, or an empty string.
+     * The last one wins because {@code --location} appends a block per redirect
+     * hop, and only the final response describes the file actually received.
+     */
+    private String lastHeaderValue(Path headerDump, String name) throws IOException {
+        String prefix = name.toLowerCase() + ":";
+        String value = "";
+        for (String line : Files.readAllLines(headerDump, StandardCharsets.ISO_8859_1)) {
+            if (line.toLowerCase().startsWith(prefix)) {
+                value = line.substring(prefix.length()).trim();
+            }
+        }
+        return value;
     }
 
     /**
