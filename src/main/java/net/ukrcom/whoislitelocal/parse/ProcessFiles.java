@@ -36,6 +36,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.ukrcom.whoislitelocal.Config;
@@ -51,6 +52,13 @@ public class ProcessFiles {
     private record DownloadedFile(String url, Path tempFile, String lastModified, long fileSize) {
 
     }
+
+    /**
+     * Result of the one-time curl probe: null until asked, then fixed for the
+     * JVM's lifetime. Several parsers download in parallel, so the probe is
+     * guarded rather than repeated per file.
+     */
+    private static volatile Boolean curlPresent;
 
     /**
      * Re-fetch and re-parse every file, ignoring the recorded Last-Modified and
@@ -298,6 +306,10 @@ public class ProcessFiles {
         // different TLS stack, so a failure specific to either is not repeated.
         // Observed twice: curl fetched this file at full speed while the Java
         // path failed.
+        if (!curlAvailable()) {
+            throw new IOException("Download of " + url + " failed after " + attempts
+                    + " attempts, and no curl is available for a fallback", lastFailure);
+        }
         try {
             log.warn("All {} in-process attempts for {} failed — falling back to curl", attempts, url);
             return downloadWithCurl(url);
@@ -306,6 +318,64 @@ public class ProcessFiles {
         }
         throw new IOException("Download of " + url + " failed after " + attempts
                 + " attempts and a curl fallback", lastFailure);
+    }
+
+    /**
+     * Whether this system has a usable curl, probed once per JVM.
+     *
+     * <p>Deliberately a capability check rather than a check on {@code os.name}.
+     * An operating-system allowlist would be wrong in both directions: minimal
+     * Linux images (alpine, distroless) frequently ship without curl, while
+     * macOS has carried {@code /usr/bin/curl} in the base system for years and
+     * Windows has shipped {@code curl.exe} in System32 since Windows 10 build
+     * 1803. Asking the system what it actually has needs no assumption about
+     * platforms, and reports the answer the same way everywhere.
+     */
+    private static boolean curlAvailable() {
+        Boolean cached = curlPresent;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (ProcessFiles.class) {
+            if (curlPresent == null) {
+                curlPresent = probeCurl();
+            }
+            return curlPresent;
+        }
+    }
+
+    private static boolean probeCurl() {
+        try {
+            Process process = new ProcessBuilder("curl", "--version")
+                    .redirectErrorStream(true).start();
+            String banner;
+            try (InputStream out = process.getInputStream()) {
+                // Drain before waiting, so a chatty curl cannot fill the pipe and block
+                banner = new String(out.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                log.warn("curl did not answer --version in time; the download fallback is disabled");
+                return false;
+            }
+            if (process.exitValue() != 0) {
+                log.warn("curl --version exited with {}; the download fallback is disabled",
+                        process.exitValue());
+                return false;
+            }
+            int newline = banner.indexOf('\n');
+            log.info("Download fallback available: {}",
+                    newline > 0 ? banner.substring(0, newline).trim() : banner.trim());
+            return true;
+        } catch (IOException e) {
+            log.info("No curl on this system ({}) — the download fallback is disabled, "
+                    + "downloads use the in-process path only",
+                    System.getProperty("os.name"));
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     /**
